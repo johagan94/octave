@@ -40,20 +40,36 @@ class SyncRunner:
 
     def load_last_from_db(self) -> None:
         """Hydrate ``_last`` from the most recent sync_runs row.
-        Call once at app startup, after ``db.init_db()``."""
+        Call once at app startup, after ``db.init_db()``.
+
+        Any run still marked 'running' in the DB was interrupted by a
+        container restart — mark it 'error' so the UI doesn't show a
+        permanently-stuck progress card and the lock remains free.
+        """
         row = db.latest_run()
         if not row:
             return
         try:
+            status = row["status"] if row["status"] in ("running", "success", "error", "idle") else "idle"
+            finished_at = datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None
+            error = row["error"]
+
+            if status == "running":
+                status = "error"
+                error = "interrupted by container restart"
+                finished_at = _now()
+                db.finish_run(row["id"], "error", finished_at, error=error)
+                log.warning("[runner] previous run was interrupted; marked as error in DB")
+
             self._last = SyncRun(
                 type=row["type"] if row["type"] in ("playlists", "all") else "all",
-                status=row["status"] if row["status"] in ("running", "success", "error", "idle") else "idle",
+                status=status,
                 started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
-                finished_at=datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None,
+                finished_at=finished_at,
                 matched=row["matched"] or 0,
                 missing=row["missing"] or 0,
                 albums_requested=row["albums_requested"] or 0,
-                error=row["error"],
+                error=error,
             )
         except Exception as exc:
             log.warning("could not hydrate last SyncRun from db: %s", exc)
