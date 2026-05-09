@@ -1,0 +1,48 @@
+# VCS / IDE
+.git
+.gitignore
+.idea
+.vscode
+
+# Python build / cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+.eggs
+dist
+build
+
+# Local virtualenv (NEVER bake this into the image)
+venv
+.venv
+env
+
+# Local-only state and secrets
+.env
+.spotify_token_cache
+sync_state.json
+spotify_sync.log
+*.log
+
+# Backups / archives
+spotify_sync.legacy.py
+files
+files.zip
+*.zip
+*.tar
+*.tar.gz
+
+# Docs that don't ship in the image
+HANDOFF.md
+docs
+
+# Smoke tests
+_pod*_check.py
+
+# Local config (mounted as a volume at runtime; example file is shipped instead)
+config.json
