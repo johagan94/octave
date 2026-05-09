@@ -159,6 +159,11 @@ label {
 /* ── Sync row (dropdown + button) ───────────────────────────────────── */
 #sync-select { max-width: 300px; }
 
+/* ── Playlist bulk edit ──────────────────────────────────────────────── */
+input[type="checkbox"] { width: auto; accent-color: var(--accent); cursor: pointer; }
+#bulk-bar select { width: auto; padding: 6px 8px; }
+tr:has(.row-check:checked) td { background: rgba(29, 185, 84, 0.05); }
+
 /* ── Stats grid ─────────────────────────────────────────────────────── */
 .stats { display: flex; gap: 24px; flex-wrap: wrap; }
 .stat { display: flex; flex-direction: column; }
