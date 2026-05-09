@@ -22,8 +22,14 @@ log = logging.getLogger(__name__)
 ProgressCb = Callable[[int, int], None]
 
 
-def run_sync(progress_cb: Optional[ProgressCb] = None) -> dict:
-    """Run the full sync pipeline once and return aggregate stats.
+def run_sync(
+    progress_cb: Optional[ProgressCb] = None,
+    playlist_ids: Optional[list[str]] = None,
+) -> dict:
+    """Run the sync pipeline once and return aggregate stats.
+
+    ``playlist_ids`` — if provided, only sync playlists whose
+    ``spotify_playlist_id`` is in the list. ``None`` means sync all.
 
     Caller is responsible for configuring logging (FastAPI does this once
     at startup; ``main()`` does it for CLI invocation). ``progress_cb``,
@@ -39,10 +45,18 @@ def run_sync(progress_cb: Optional[ProgressCb] = None) -> dict:
     lidarr = LidarrClient(cfg)
     mb = MusicBrainzResolver()
 
-    playlists = cfg.get("playlists", [])
-    if not playlists:
+    all_playlists = cfg.get("playlists", [])
+    if not all_playlists:
         log.error("No playlists defined in config.json")
         raise RuntimeError("No playlists defined in config.json")
+
+    playlists = (
+        [p for p in all_playlists if p.get("spotify_playlist_id") in playlist_ids]
+        if playlist_ids is not None
+        else all_playlists
+    )
+    if not playlists:
+        raise RuntimeError(f"No matching playlists found for ids: {playlist_ids}")
 
     totals = {"matched": 0, "missing": 0, "albums_requested": 0, "playlists": 0}
     total = len(playlists)

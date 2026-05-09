@@ -83,11 +83,17 @@ class SyncRunner:
             return self._last
         return SyncRun(status="idle")
 
-    async def trigger(self, sync_type: SyncType = "all") -> SyncRun:
+    async def trigger(
+        self,
+        sync_type: SyncType = "all",
+        playlist_ids: Optional[list[str]] = None,
+    ) -> SyncRun:
         """Start a sync if none is running. Returns immediately.
 
-        The actual work proceeds on a worker thread; the returned SyncRun
-        has ``status='running'``. Poll ``/api/sync/status`` for updates.
+        ``playlist_ids`` — if set, only those playlists are synced.
+        ``None`` syncs all. The actual work proceeds on a worker thread;
+        the returned SyncRun has ``status='running'``. Poll
+        ``/api/sync/status`` for updates.
 
         Raises HTTPException(409) if a sync is already in flight.
         """
@@ -99,17 +105,19 @@ class SyncRunner:
             run = SyncRun(type=sync_type, status="running", started_at=_now())
             run_id = db.insert_run(run.type, run.started_at, "running")
             self._current = run
-            log.info("[runner] sync started type=%s db_id=%d", sync_type, run_id)
-            asyncio.create_task(self._execute(run_id))
+            log.info("[runner] sync started type=%s playlist_ids=%s db_id=%d",
+                     sync_type, playlist_ids or "all", run_id)
+            asyncio.create_task(self._execute(run_id, playlist_ids))
             return run
         except Exception:
-            # Failed to enqueue — release lock so the next attempt isn't blocked
             self._lock.release()
             raise
 
     # ── Internal ──────────────────────────────────────────────────────
 
-    async def _execute(self, run_id: int) -> None:
+    async def _execute(
+        self, run_id: int, playlist_ids: Optional[list[str]] = None
+    ) -> None:
         run = self._current
         assert run is not None  # set by trigger()
         try:
@@ -117,7 +125,9 @@ class SyncRunner:
                 run.current = current
                 run.total = total
 
-            totals = await asyncio.to_thread(core_main.run_sync, progress_cb)
+            totals = await asyncio.to_thread(
+                core_main.run_sync, progress_cb, playlist_ids
+            )
             run.matched = totals.get("matched", 0)
             run.missing = totals.get("missing", 0)
             run.albums_requested = totals.get("albums_requested", 0)
