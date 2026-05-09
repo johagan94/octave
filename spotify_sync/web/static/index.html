@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spotify Sync</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%231db954'/%3E%3C/svg%3E">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="dot"></span>
+    <h1>Spotify Sync</h1>
+  </div>
+  <nav id="nav">
+    <a href="#/dashboard" data-route="dashboard">Dashboard</a>
+    <a href="#/playlists" data-route="playlists">Playlists</a>
+    <a href="#/logs" data-route="logs">Logs</a>
+    <a href="#/config" data-route="config">Config</a>
+    <a href="#/setup" data-route="setup">Setup</a>
+  </nav>
+  <div class="header-actions">
+    <button id="api-key-btn" title="Set API key" class="icon-btn">🔑</button>
+  </div>
+</header>
+
+<main id="view"></main>
+
+<dialog id="api-key-dialog">
+  <form method="dialog">
+    <h3>API key</h3>
+    <p>Required if the server has <code>API_KEY</code> set. Stored in browser localStorage only — never sent to anything except this server.</p>
+    <input id="api-key-input" type="password" placeholder="leave blank if no auth" autocomplete="off">
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button id="api-key-save" value="save">Save</button>
+    </menu>
+  </form>
+</dialog>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

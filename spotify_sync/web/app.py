@@ -12,9 +12,11 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from ..logging_setup import configure_logging
 from . import db
@@ -92,5 +94,12 @@ def create_app() -> FastAPI:
     api_router.include_router(config_route.router)
     api_router.include_router(playlists.router)
     app.include_router(api_router)
+
+    # Frontend SPA — serve index.html + JS + CSS at /
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    else:
+        log.warning("[web] static dir not found at %s — UI will 404", static_dir)
 
     return app

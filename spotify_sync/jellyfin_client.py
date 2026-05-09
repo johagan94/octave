@@ -171,3 +171,11 @@ class JellyfinClient:
             f"/Playlists/{playlist_id}/Items",
             EntryIds=",".join(entry_ids),
         )
+
+    def delete_playlist(self, playlist_id: str) -> None:
+        """Delete a playlist entirely. Used by the ``rebuild`` sync mode
+        to wipe-and-recreate so track ordering matches Spotify exactly
+        and any drift (manual edits, stale items) is reset on every run.
+        """
+        self._delete(f"/Items/{playlist_id}")
+        log.info("  Deleted Jellyfin playlist id=%s", playlist_id)

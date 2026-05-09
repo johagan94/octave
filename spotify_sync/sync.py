@@ -231,9 +231,22 @@ def sync_playlist(
     matched_ids = unique_matched
 
     # ── Update Jellyfin playlist ──────────────────────────────────────────
-    pl_id = jf.get_or_create_playlist(jf_name)
-    existing_items = jf.get_playlist_items(pl_id)
-    existing_item_ids = {i["Id"] for i in existing_items}
+    if sync_mode == "rebuild":
+        # Wipe any existing playlist with this name and recreate fresh.
+        # Guarantees track order matches Spotify exactly and resets any
+        # manual edits / stale items that have accumulated in Jellyfin.
+        for pl in jf.get_playlists():
+            if pl["Name"].lower() == jf_name.lower():
+                log.info("  rebuild: deleting existing playlist '%s'", jf_name)
+                jf.delete_playlist(pl["Id"])
+                break
+        pl_id = jf.get_or_create_playlist(jf_name)
+        existing_item_ids: set[str] = set()
+        existing_items: list[dict] = []
+    else:
+        pl_id = jf.get_or_create_playlist(jf_name)
+        existing_items = jf.get_playlist_items(pl_id)
+        existing_item_ids = {i["Id"] for i in existing_items}
 
     if sync_mode == "full_sync":
         matched_set = set(matched_ids)

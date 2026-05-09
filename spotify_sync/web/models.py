@@ -62,7 +62,7 @@ class PlaylistEntry(BaseModel):
 
     spotify_playlist_id: str
     jellyfin_playlist_name: Optional[str] = None
-    sync_mode: Literal["add_only", "full_sync"] = "add_only"
+    sync_mode: Literal["add_only", "full_sync", "rebuild"] = "add_only"
 
 
 class HealthInfo(BaseModel):

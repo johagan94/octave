@@ -23,7 +23,7 @@
       "_comment": "Playlist ID is the part after /playlist/ in the Spotify share URL",
       "spotify_playlist_id": "37i9dQZF1DXcBWIGoYBM5M",
       "jellyfin_playlist_name": "Today's Top Hits",
-      "_sync_mode_comment": "add_only = never remove tracks | full_sync = mirror Spotify exactly",
+      "_sync_mode_comment": "add_only = never remove tracks | full_sync = mirror Spotify, remove stale | rebuild = wipe and recreate from scratch every run (preserves Spotify track order, cleans drift)",
       "sync_mode": "add_only"
     }
   ]
