@@ -50,7 +50,7 @@ class _OAuthCallbackHandler(BaseHTTPRequestHandler):
 
 
 def _run_local_server(port: int) -> HTTPServer:
-    server = HTTPServer(("127.0.0.1", port), _OAuthCallbackHandler)
+    server = HTTPServer(("0.0.0.0", port), _OAuthCallbackHandler)
     thread = threading.Thread(target=server.handle_request, daemon=True)
     thread.start()
     return server
