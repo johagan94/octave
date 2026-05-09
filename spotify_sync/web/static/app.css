@@ -156,6 +156,9 @@ label {
   transition: width 0.3s ease;
 }
 
+/* ── Sync row (dropdown + button) ───────────────────────────────────── */
+#sync-select { max-width: 300px; }
+
 /* ── Stats grid ─────────────────────────────────────────────────────── */
 .stats { display: flex; gap: 24px; flex-wrap: wrap; }
 .stat { display: flex; flex-direction: column; }

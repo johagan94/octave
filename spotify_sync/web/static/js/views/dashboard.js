@@ -1,4 +1,4 @@
-// Dashboard: integration health, sync card with progress bar, "Sync now".
+// Dashboard: integration health, sync card with progress bar, playlist sync dropdown.
 
 import { api, ApiError } from "../api.js";
 import { h, fmtMs, fmtAge } from "../h.js";
@@ -7,6 +7,7 @@ import { toast } from "../toast.js";
 let pollTimer = 0;
 let setupTimer = 0;
 let mounted = false;
+let playlistCache = [];
 
 function badgeFor(intg) {
   if (!intg.configured) return h("span.badge.dim", "not configured");
@@ -37,18 +38,35 @@ function integrationCard(name, intg) {
   );
 }
 
+function buildSyncSelect(isRunning) {
+  const sel = h("select", {
+    id: "sync-select",
+    disabled: isRunning,
+    style: { flex: "1", minWidth: "0" },
+  });
+  sel.appendChild(h("option", { value: "" }, "All playlists"));
+  for (const p of playlistCache) {
+    const label = p.jellyfin_playlist_name || p.spotify_playlist_id;
+    sel.appendChild(h("option", { value: p.spotify_playlist_id }, label));
+  }
+  return sel;
+}
+
 function syncCard(run) {
   const isRunning = run.status === "running";
   const pct = run.total > 0 ? Math.round((run.current / run.total) * 100) : 0;
 
   return h("div.card",
     h("div.card-row",
-      h("div", h("h2", "Sync"), h("small", { style: { color: "var(--text-dim)" } }, "type: " + (run.type || "all"))),
-      h("button.primary", {
-        id: "sync-btn",
-        disabled: isRunning,
-        onclick: () => triggerSync(),
-      }, isRunning ? "Syncing…" : "Sync now"),
+      h("div", h("h2", "Sync")),
+      h("div", { style: { display: "flex", gap: "8px", alignItems: "center", flex: "1", justifyContent: "flex-end", maxWidth: "480px" } },
+        buildSyncSelect(isRunning),
+        h("button.primary", {
+          id: "sync-btn",
+          disabled: isRunning,
+          onclick: () => triggerSync(),
+        }, isRunning ? "Syncing…" : "Sync"),
+      ),
     ),
 
     h("div.card-row", { style: { marginTop: "16px" } },
@@ -86,9 +104,15 @@ function statusKind(status) {
 }
 
 async function triggerSync() {
+  const sel = document.getElementById("sync-select");
+  const spotifyId = sel ? sel.value : "";
+  const body = spotifyId ? { playlist_ids: [spotifyId] } : {};
+  const label = sel && spotifyId
+    ? (sel.options[sel.selectedIndex]?.text || spotifyId)
+    : "all playlists";
   try {
-    await api.post("/api/sync/all");
-    toast("Sync started");
+    await api.post("/api/sync/all", body);
+    toast(`Sync started: ${label}`);
     refreshSync();
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
@@ -159,6 +183,14 @@ export default {
       h("div.empty", "Loading…"),
     ));
     containerRef = container.querySelector("#dashboard-content");
+
+    // Load playlists for the sync dropdown
+    try {
+      const data = await api.get("/api/playlists");
+      playlistCache = (data.playlists || []).slice().sort((a, b) =>
+        (a.jellyfin_playlist_name || "").localeCompare(b.jellyfin_playlist_name || "")
+      );
+    } catch (_) { /* non-fatal — dropdown will only show "All playlists" */ }
 
     await Promise.all([refreshSetup(), refreshSync()]);
     render();
