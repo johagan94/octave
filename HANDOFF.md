@@ -320,62 +320,112 @@ synthesis section above. **Image rebuild required** for the FastAPI deps
 
 ---
 
-## Pod 4 — Web Frontend (NEXT)
+## Pod 4 — Web Frontend ✅ COMPLETE
 
-### Goal
-A usable web UI served from the same FastAPI process — single page
-load, no build pipeline, dependencies vendored.
+### What was delivered
 
-### Deliverables expected
+Vanilla-JS single-page UI served from the same FastAPI process. No build
+pipeline, no framework, no bundler.
 
-```
-spotify_sync/web/static/
-├── index.html              shell (loads JS modules, mounts views)
-├── app.css                 hand-rolled or vendored Pico/Simple.css
-├── js/
-│   ├── api.js              fetch() wrapper handling envelope + X-API-Key
-│   ├── router.js           hash-based router (#/dashboard, #/playlists, ...)
-│   ├── views/
-│   │   ├── setup.js        wizard if /api/setup/status reports any not-configured
-│   │   ├── dashboard.js    SyncRun card, integration badges, "Sync now"
-│   │   ├── playlists.js    table + add/delete forms
-│   │   ├── logs.js         EventSource tail + history fetch
-│   │   └── settings.js     env display + per-integration test buttons
-│   └── components/
-│       ├── status_badge.js (configured/reachable/latency badge)
-│       └── progress_bar.js (current/total bar)
-└── vendor/
-    └── pico.min.css        OR equivalent — keep it tiny
-```
+**Static file layout** (`spotify_sync/web/static/`):
 
-`app.py` mount one line:
+| File | Purpose |
+|---|---|
+| `index.html` | Shell: sticky header, hash-nav, `<main id="view">`, API-key dialog |
+| `app.css` | 230-line hand-rolled dark theme. Tokens via CSS vars. Responsive grid. |
+| `js/api.js` | `fetch()` wrapper: reads `localStorage.spotify_sync_api_key`, unwraps `{data,error}` envelope, throws typed `ApiError`. Exports `api.{get,post,put,del}` + `getApiKey/setApiKey`. |
+| `js/router.js` | Hash router: `register(name, module)`, `navigate(name)`, `start(container)`. Calls `module.mount(el)` / `module.unmount()` on every hash change. |
+| `js/h.js` | `h(tag.class#id, props, ...children)` micro-DOM helper. Also exports `fmtMs`, `fmtAge`. |
+| `js/toast.js` | Fixed-position toast singleton: `toast(msg, kind, ms)`. Kinds: `ok / warn / error`. |
+| `js/app.js` | Entry: registers 5 views, wires API-key dialog, starts router. |
+| `js/views/dashboard.js` | Integration badge grid + `SyncRun` card (status badge, progress bar, stats). Polls `/api/sync/status` every 1.5s while running, 5s at rest. Re-checks `/api/setup/status` every 30s. |
+| `js/views/playlists.js` | Add form (Spotify URL or raw ID extracted via regex), existing table with inline sync-mode `<select>` (delete+re-add to update), delete with confirmation. |
+| `js/views/logs.js` | Loads last 200 lines via `/api/logs`, then streams via `EventSource('/api/logs/stream')`. Pause/resume, auto-scroll toggle, Clear. Capped at 5000 DOM nodes. |
+| `js/views/setup.js` | Per-integration step cards (todo/pending/done) with inline fix guidance. Re-pings every 30s. |
+| `js/views/config.js` | `<textarea>` raw JSON editor. Validate parse before PUT. Atomic server-side write (`.tmp` + rename). |
+
+**Mount in `app.py`** (already in place from Pod 3 prep):
 ```python
-app.mount("/", StaticFiles(directory=Path(__file__).parent / "static",
-                            html=True), name="static")
+static_dir = Path(__file__).parent / "static"
+if static_dir.is_dir():
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 ```
 
-### Implementation guidance (lessons from Pod 3)
+**Rebuild sync mode** (also landed in this pod):
+- `spotify_sync/sync.py` — `rebuild` branch: lists Jellyfin playlists, deletes any
+  name-matched one, creates fresh, adds all matched tracks. Guarantees Spotify
+  track order and resets any manual-edit drift.
+- `spotify_sync/jellyfin_client.py` — added `delete_playlist(playlist_id)` →
+  `DELETE /Items/{id}`.
+- `spotify_sync/web/models.py` — `PlaylistEntry.sync_mode` Literal updated to
+  include `"rebuild"`.
+- `_pod4_rebuild_check.py` — 4 mock tests for the rebuild branch.
 
-1. **Don't build a SPA framework.** Hash routing + 5 view modules is enough. The whole UI should be < 1000 LOC of JS.
-2. **Always go through `/api/setup/status` on first load** — render the setup wizard if any integration is not configured, otherwise jump to dashboard. spotify-to-plex got this pattern right.
-3. **`api.js` reads `localStorage.api_key`** and adds `X-API-Key` header if present. Login flow: a settings-page input that writes to localStorage. No "real" auth UI.
-4. **EventSource just works** — `new EventSource('/api/logs/stream')` with auto-reconnect on close. Wire up a Pause button by closing/reopening.
-5. **Progress bar reads `SyncRun.current / SyncRun.total`** — poll `/api/sync/status` every 2s while `status === "running"`. Stop polling otherwise.
-6. **Use the OpenAPI schema for free** — Swagger UI is at `/api/docs` for developers, but the human UI doesn't need it.
+**Deployment fix — volume permissions**:
+Docker-compose creates `./config`, `./data`, `./logs` as root-owned directories on
+first run (Docker behaviour on Linux). Fix before first `docker compose up`:
+```bash
+sudo chown -R 1000:1000 ./config ./data ./logs
+```
+After that, the `app` user (uid 1000) inside the container can write normally.
 
-### Don't
+**.env additions**:
+`JELLYFIN_URL` and `LIDARR_URL` were missing from the initial `.env`. These must
+be set to a URL reachable from **inside the container**. On this homelab the other
+services live on the `homelab` Docker network; the gateway `172.18.0.1` is
+accessible from the `spotify_sync_default` network:
+```
+JELLYFIN_URL=http://172.18.0.1:8096
+LIDARR_URL=http://172.18.0.1:8686
+```
 
-- Don't copy spotify-to-plex's narrow 700px MUI layout — use full-width responsive tables.
-- Don't introduce React/Vue/Svelte. The Pod 3 endpoints are designed to be served raw; a framework adds bundle size for no functional gain.
-- Don't put the OAuth flow inside an iframe — Spotify forbids it. Show the URL with a "click to authorize" button and poll `/api/setup/status` until `spotify.reachable === true`.
-- Don't store the API key anywhere except localStorage. No cookies, no server-side session.
+### Verification done
 
-### Verification expected
+- **`_pod4_rebuild_check.py` 4/4 PASS** — mock tests: delete+recreate, no-delete
+  when playlist doesn't exist, Pydantic accepts `"rebuild"`, `delete_playlist`
+  calls `DELETE /Items/{id}`.
+- **`_pod1_check.py` 12/12 PASS** — package regression clean.
+- **`_pod3_check.py` 11/11 PASS** — endpoint contract clean.
+- **All 12 static assets → 200 OK** from the `spotify-sync:pod4` container
+  (`/`, `/app.css`, `/js/app.js`, all view modules).
+- **Live stack probe** (`docker compose up` with real `.env`):
+  - `/api/health` → `{status: "ok", version: "2.0.0"}`
+  - `/api/setup/status` → Jellyfin reachable (v10.11.8, 18ms), Lidarr reachable
+    (v3.1.2.4939, 20ms), Spotify configured/no-token-cache (needs OAuth first run)
+  - `/api/playlists` → 43 playlists loaded from real `config.json`
+- **Image**: `spotify-sync:pod4` / `spotify-sync:latest`, **318 MB**
 
-- Load `/` in browser → setup wizard if not configured, dashboard otherwise
-- All views render without console errors with Lighthouse > 90 on accessibility
-- Live log stream survives a 30s idle window without dropping
-- `Sync now` triggers a sync, progress bar advances as `current/total` updates
+### Known issues / deferred
+
+1. **Spotify OAuth still requires browser access to port 8888** on the container
+   host for first-run token acquisition. Steps: browse to the UI → Dashboard →
+   "Sync now" → the sync will log a URL → open that URL in the browser on port 8888
+   → token cache written to `./data/.spotify_token_cache` → subsequent syncs
+   automatic. Pod 5/6 could surface this URL directly in the Setup view.
+2. **`SYNC_MODE=web` (default) and SSE log streaming are incompatible with
+   `API_KEY` set**, because `EventSource` cannot send custom headers. Low-priority
+   on a trusted LAN. Fix: add the key as a query param and read it server-side.
+3. **Image size 318 MB** — unchanged from Pod 3. Alpine base would help. Deferred.
+4. **config volume seeded from `config.example.json` on first run** — users must
+   copy their real `config.json` into `./config/` after first boot, or the
+   playlists list will be empty (the UI's Config view can be used to edit it).
+5. **`./config`, `./data`, `./logs` volume dirs are created root-owned by Docker**
+   on Linux. Must `sudo chown -R 1000:1000` before first compose up or the
+   entrypoint can't write `config.json`.
+
+### Things Pod 5+ can assume
+
+1. UI is fully functional. All 5 views mount/unmount cleanly. No console errors on
+   a clean load with real credentials.
+2. `rebuild` sync mode is implemented end-to-end (Jellyfin client + sync engine +
+   Pydantic model + UI sync-mode selector in the Playlists view).
+3. `JELLYFIN_URL` and `LIDARR_URL` must be set in `.env` to URLs reachable from
+   **inside the container** (not `localhost` — that resolves to the container
+   itself). On a single-host Docker homelab, use the gateway IP of the shared
+   network (e.g. `172.18.0.1`).
+4. The real `config.json` must be copied into `./config/` after first boot.
+5. Spotify token cache (`./data/.spotify_token_cache`) survives container restarts
+   as long as the `./data` volume is preserved — no re-auth needed after that.
 
 ---
 
