@@ -1,0 +1,44 @@
+# Credentials — never commit these
+.env
+
+# User's actual config (commit config.example.json instead)
+config.json
+
+# Windows alternate-data-stream artifacts
+*:Zone.Identifier
+
+# Spotify OAuth token cache
+.spotify_token_cache
+
+# Runtime state
+sync_state.json
+spotify_sync.log
+
+# Docker-compose host-side volume mounts
+/config/
+/data/
+/logs/
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc backups / archives
+files/
+files.zip
+files.zipZone.Identifier
