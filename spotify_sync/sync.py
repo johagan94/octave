@@ -349,6 +349,13 @@ def sync_playlist(
     matched_count = len(matched_ids)
     missing_count = len(missing)
 
+    # Persist missing tracks for UI download
+    if missing:
+        try:
+            write_missing_tracks(jf_name, spotify_id, missing)
+        except Exception as exc:
+            log.debug("Failed to write missing tracks: %s", exc)
+
     if not missing:
         return {
             "matched": matched_count, "missing": missing_count,
@@ -447,3 +454,37 @@ def sync_playlist(
         "albums_requested": len(seen_albums),
         "waiting_lidarr": len(waiting_lidarr),
     }
+
+
+def write_missing_tracks(
+    playlist_name: str,
+    spotify_id: str,
+    missing: list[dict],
+    output_dir: str = "data",
+) -> None:
+    """Persist missing tracks to JSON for UI download."""
+    import json
+    from pathlib import Path
+    out = Path(output_dir) / "missing_tracks.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if out.exists():
+        try:
+            existing = json.loads(out.read_text())
+        except json.JSONDecodeError:
+            pass
+    existing[spotify_id] = {
+        "playlist_name": playlist_name,
+        "tracks": [
+            {
+                "spotify_id": t.get("id", ""),
+                "title": t.get("name", ""),
+                "artist": ", ".join(a.get("name", "") for a in t.get("artists", [])),
+                "album": t.get("album", {}).get("name", ""),
+                "album_type": t.get("album", {}).get("album_type", ""),
+                "spotify_url": f"https://open.spotify.com/track/{t.get('id', '')}" if t.get("id") else "",
+            }
+            for t in missing
+        ],
+    }
+    out.write_text(json.dumps(existing, indent=2))

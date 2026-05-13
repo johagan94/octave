@@ -1,10 +1,13 @@
-"""Sync trigger + status + history endpoints."""
+"""Sync trigger + status + history + missing tracks endpoints."""
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Body, Path, Query
+from fastapi import APIRouter, Body, Path as FPath, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .. import db
@@ -22,7 +25,7 @@ class SyncRequest(BaseModel):
 
 @router.post("/sync/{type}")
 async def trigger_sync(
-    type: SyncTypeParam = Path(..., description="Sync target: 'playlists' or 'all'"),
+    type: SyncTypeParam = FPath(..., description="Sync target: 'playlists' or 'all'"),
     body: SyncRequest = Body(default=SyncRequest()),
 ):
     """Start a sync. Pass ``playlist_ids`` to sync a subset; omit for all.
@@ -81,3 +84,40 @@ def get_sync_run_detail(run_id: int):
             for r in rows
         ],
     })
+
+
+@router.get("/sync/missing")
+def get_missing_tracks():
+    """Return all missing tracks from the most recent sync."""
+    path = Path("data/missing_tracks.json")
+    if not path.exists():
+        return ok({"playlists": {}})
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return ok({"playlists": {}})
+    return ok({"playlists": data})
+
+
+@router.get("/sync/missing/download/{spotify_id}")
+def download_missing_csv(spotify_id: str):
+    """Download missing tracks for a playlist as CSV."""
+    path = Path("data/missing_tracks.json")
+    if not path.exists():
+        return Response(content="No data", media_type="text/plain")
+    data = json.loads(path.read_text())
+    pl = data.get(spotify_id, {})
+    tracks = pl.get("tracks", [])
+    if not tracks:
+        return Response(content="No tracks", media_type="text/plain")
+    header = "spotify_id,title,artist,album,album_type,spotify_url\n"
+    rows = "\n".join(
+        f"{t.get('spotify_id','')},{t.get('title','')},{t.get('artist','')},"
+        f"{t.get('album','')},{t.get('album_type','')},{t.get('spotify_url','')}"
+        for t in tracks
+    )
+    return Response(
+        content=header + rows,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=missing_{spotify_id}.csv"},
+    )
