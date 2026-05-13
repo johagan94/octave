@@ -8,12 +8,14 @@ import playlists from "./views/playlists.js";
 import logs      from "./views/logs.js";
 import setup     from "./views/setup.js";
 import config    from "./views/config.js";
+import missing   from "./views/missing.js";
 
 register("dashboard", dashboard);
 register("playlists", playlists);
 register("logs",      logs);
 register("setup",     setup);
 register("config",    config);
+register("missing",   missing);
 
 // API-key dialog
 const dialog = document.getElementById("api-key-dialog");
