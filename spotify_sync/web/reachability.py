@@ -48,6 +48,7 @@ def _load_raw_config() -> dict[str, Any]:
 def check_spotify() -> IntegrationStatus:
     """Spotify is 'reachable' if a valid (or refreshable) token exists.
 
+    Check order: user token → client credentials → not configured.
     We do NOT trigger an OAuth flow here — that's a UI-driven action.
     """
     cid = os.environ.get("SPOTIFY_CLIENT_ID", "").strip()
@@ -58,25 +59,31 @@ def check_spotify() -> IntegrationStatus:
     if not configured:
         return IntegrationStatus(configured=False, reachable=False,
                                  error="SPOTIFY_CLIENT_ID/SECRET not set")
-    if not cache_path.exists():
-        return IntegrationStatus(configured=True, reachable=False,
-                                 error="no token cache — first-run OAuth pending")
-    try:
-        import json
-        with cache_path.open() as fh:
-            tok = json.load(fh)
-    except Exception as exc:
-        return IntegrationStatus(configured=True, reachable=False,
-                                 error=f"token cache unreadable: {exc}")
 
-    expires_at = tok.get("expires_at", 0)
-    has_refresh = bool(tok.get("refresh_token"))
-    fresh = time.time() < expires_at - 30
+    # Check user token cache
+    has_user_token = False
+    if cache_path.exists():
+        try:
+            import json
+            with cache_path.open() as fh:
+                tok = json.load(fh)
+            expires_at = tok.get("expires_at", 0)
+            has_refresh = bool(tok.get("refresh_token"))
+            fresh = time.time() < expires_at - 30
+            has_user_token = fresh or has_refresh
+        except Exception:
+            pass
+
+    if has_user_token:
+        return IntegrationStatus(
+            configured=True, reachable=True,
+            detail={"mode": "user_token", "has_refresh_token": True},
+        )
+
+    # Client credentials always available if ID/secret are set
     return IntegrationStatus(
-        configured=True,
-        reachable=fresh or has_refresh,
-        detail={"expires_at": expires_at, "has_refresh_token": has_refresh},
-        error=None if (fresh or has_refresh) else "token expired and not refreshable",
+        configured=True, reachable=True,
+        detail={"mode": "client_credentials", "note": "public playlists only"},
     )
 
 
@@ -146,6 +153,58 @@ async def check_lidarr() -> IntegrationStatus:
             detail={"version": info.get("version"),
                     "branch": info.get("branch")},
         )
+    except Exception as exc:
+        latency = int((time.perf_counter() - started) * 1000)
+        return IntegrationStatus(configured=True, reachable=False,
+                                 latency_ms=latency, error=str(exc))
+
+
+async def check_listenbrainz() -> IntegrationStatus:
+    token = os.environ.get("LISTENBRAINZ_TOKEN", "").strip()
+    if not token:
+        return IntegrationStatus(configured=False, reachable=False,
+                                 error="LISTENBRAINZ_TOKEN not set (optional)")
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(
+                "https://api.listenbrainz.org/1/status/get-dump-info",
+            )
+        latency = int((time.perf_counter() - started) * 1000)
+        if r.status_code == 200:
+            return IntegrationStatus(configured=True, reachable=True,
+                                     latency_ms=latency,
+                                     detail={"status": "connected"})
+        return IntegrationStatus(configured=True, reachable=False,
+                                 latency_ms=latency,
+                                 error=f"HTTP {r.status_code}")
+    except Exception as exc:
+        latency = int((time.perf_counter() - started) * 1000)
+        return IntegrationStatus(configured=True, reachable=False,
+                                 latency_ms=latency, error=str(exc))
+
+
+async def check_lastfm() -> IntegrationStatus:
+    api_key = os.environ.get("LASTFM_API_KEY", "").strip()
+    if not api_key:
+        return IntegrationStatus(configured=False, reachable=False,
+                                 error="LASTFM_API_KEY not set (optional)")
+    started = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(
+                "https://ws.audioscrobbler.com/2.0/",
+                params={"method": "chart.getTopTracks", "api_key": api_key,
+                        "format": "json"},
+            )
+        latency = int((time.perf_counter() - started) * 1000)
+        if r.status_code == 200 and r.json().get("tracks"):
+            return IntegrationStatus(configured=True, reachable=True,
+                                     latency_ms=latency,
+                                     detail={"status": "connected"})
+        err = r.json().get("message", f"HTTP {r.status_code}") if r.status_code != 200 else "no data"
+        return IntegrationStatus(configured=True, reachable=False,
+                                 latency_ms=latency, error=str(err))
     except Exception as exc:
         latency = int((time.perf_counter() - started) * 1000)
         return IntegrationStatus(configured=True, reachable=False,

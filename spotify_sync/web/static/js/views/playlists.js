@@ -180,6 +180,11 @@ function row(p) {
         onchange: (e) => toggleSelect(id, e.target.checked),
       }),
     ),
+    h("td", { style: { width: "42px" } },
+      p.cover_url
+        ? h("img.playlist-cover", { src: p.cover_url, loading: "lazy", title: p.jellyfin_playlist_name || id })
+        : h("div.playlist-cover-placeholder"),
+    ),
     h("td", p.jellyfin_playlist_name || h("em", { style: { color: "var(--text-dim)" } }, "(unnamed)")),
     h("td", h("span.id", id)),
     h("td", modeSelect),
@@ -260,6 +265,7 @@ function render() {
     const tbl = h("table",
       h("thead", h("tr",
         h("th", { style: { width: "1%" } }, allCb),
+        h("th", { style: { width: "42px" } }, ""),
         h("th", "Name"),
         h("th", "Spotify ID"),
         h("th", "Sync mode"),

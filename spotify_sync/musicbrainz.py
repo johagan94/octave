@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 class MusicBrainzResolver:
     BASE = "https://musicbrainz.org/ws/2"
     RATE_LIMIT = 1.1
-    USER_AGENT = "spotify-jellyfin-sync/2.0 (https://github.com/user/spotify-sync)"
+    USER_AGENT = "octave-sync/3.0 (https://github.com/user/octave)"
 
     def __init__(self):
         self._last_req = 0.0

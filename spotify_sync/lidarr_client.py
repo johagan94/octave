@@ -6,7 +6,7 @@ from typing import Optional
 import requests
 
 from .http_utils import http_get_with_retry
-from .matcher import best_match, score_pair
+from .matcher import best_match, normalise, score_pair
 
 log = logging.getLogger(__name__)
 
@@ -22,9 +22,12 @@ class LidarrClient:
         self._root_folder_cache: Optional[str] = None
         self._artist_cache: Optional[list[dict]] = None
         self._album_cache: Optional[list[dict]] = None
+        self._album_exact_index: dict[str, dict] = {}
         # Per-run cache: lowercase artist name → resolved Lidarr artist or None.
         # Sentinel ``...`` distinguishes "not yet looked up" from "looked up, no match".
         self._run_artist_cache: dict[str, Optional[dict]] = {}
+        # Track which artists have already logged failures this run
+        self._logged_failures: set[str] = set()
 
     # ── HTTP helpers ──────────────────────────────────────────────────────
 
@@ -179,15 +182,58 @@ class LidarrClient:
     def get_artist_albums(self, artist_id: int) -> list[dict]:
         return self._get("/album", artistId=artist_id)
 
-    def find_album_in_library(self, album_name: str, artist_name: str) -> Optional[dict]:
-        """Multi-strategy search across ALL Lidarr albums (cached)."""
+    def _build_album_index(self) -> None:
+        """Build O(1) lookup index for all albums. First checks exact, then score."""
+        if self._album_exact_index:
+            return
+        for a in self.get_albums():
+            title = normalise(a.get("title", ""))
+            artist = normalise(
+                a.get("artist", {}).get("artistName", "")
+            )
+            if title and artist:
+                key = f"{artist}|{title}"
+                if key not in self._album_exact_index:
+                    self._album_exact_index[key] = a
+        log.info("  Lidarr album index: %d entries", len(self._album_exact_index))
+
+    def find_album_in_library(
+        self, album_name: str, artist_name: str, spotify_artist_name: str = ""
+    ) -> Optional[dict]:
+        """Multi-strategy search across ALL Lidarr albums (indexed).
+
+        Phase 1: exact index lookup (O(1)).
+        Phase 2: fuzzy scan with compilation guard — if matched album has
+        a different primary artist, don't accept it unless title score > 92.
+        """
+        self._build_album_index()
+
+        an, aa = normalise(album_name), normalise(spotify_artist_name or artist_name)
+        key = f"{aa}|{an}"
+        if key in self._album_exact_index:
+            return self._album_exact_index[key]
+
+        best_score = 0.0
+        best_item: Optional[dict] = None
+
         for a in self.get_albums():
             title_score, _ = score_pair(album_name, a.get("title", ""))
             artist_score, _ = score_pair(
                 artist_name, a.get("artist", {}).get("artistName", "")
             )
             if title_score >= 85 and artist_score >= 75:
-                return a
+                combined = title_score * 0.55 + artist_score * 0.45
+                # Compilation guard: penalise cross-artist matches
+                if spotify_artist_name and title_score < 92:
+                    lidarr_artist = normalise(a.get("artist", {}).get("artistName", ""))
+                    if aa and lidarr_artist and aa != lidarr_artist:
+                        combined -= 15
+                if combined > best_score:
+                    best_score = combined
+                    best_item = a
+
+        if best_item and best_score >= 70:
+            return best_item
         return None
 
     def find_album_in_artist(

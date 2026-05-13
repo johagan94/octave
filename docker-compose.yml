@@ -30,6 +30,7 @@ services:
       # --- Optional ---
       SYNC_MODE:        ${SYNC_MODE:-web}
       SYNC_ON_STARTUP:  ${SYNC_ON_STARTUP:-false}
+      SYNC_SCHEDULE:    ${SYNC_SCHEDULE:-0 2 * * *}   # cron; empty string = disabled
       LOG_LEVEL:        ${LOG_LEVEL:-INFO}
       TZ:               ${TZ:-UTC}
       WEB_PORT:         ${WEB_PORT:-8000}

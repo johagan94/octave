@@ -47,7 +47,17 @@ def load_config() -> dict:
         log.error(msg)
         raise ConfigError(msg)
     with path.open() as fh:
-        cfg = json.load(fh)
+        try:
+            cfg = json.load(fh)
+        except json.JSONDecodeError as exc:
+            msg = (
+                f"Config file {path} has invalid JSON at "
+                f"line {exc.lineno}, column {exc.colno}: {exc.msg}. "
+                f"Check for trailing commas, trailing content, or "
+                f"unclosed brackets."
+            )
+            log.error(msg)
+            raise ConfigError(msg) from exc
 
     cfg.setdefault("spotify", {})
     cfg["spotify"]["client_id"] = _require_env("SPOTIFY_CLIENT_ID")
