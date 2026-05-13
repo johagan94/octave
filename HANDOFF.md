@@ -429,46 +429,128 @@ LIDARR_URL=http://172.18.0.1:8686
 
 ---
 
-## Pod 5 — Scheduler (revised)
+## Pod 5 — Scheduler ✅ COMPLETE
 
-Move from "manual trigger only" (Pod 3) to autonomous. APScheduler
-in-process inside the FastAPI app — `BackgroundScheduler` started in
-the FastAPI lifespan event.
+### What was delivered
 
-```python
-@asynccontextmanager
-async def lifespan(app):
-    scheduler = AsyncIOScheduler(timezone=os.environ.get("TZ", "UTC"))
-    cron = os.environ.get("SYNC_SCHEDULE", "0 2 * * *")
-    scheduler.add_job(runner.trigger, CronTrigger.from_crontab(cron),
-                      args=["all"], id="main_sync")
-    scheduler.start()
-    if os.environ.get("SYNC_ON_STARTUP", "").lower() == "true":
-        asyncio.create_task(runner.trigger("all"))
-    yield
-    scheduler.shutdown()
-```
+Autonomous cron-based sync via APScheduler 3.x in-process, wired into the
+FastAPI lifespan. Manual trigger continues to work; schedule and manual sync
+share the same `asyncio.Lock` so they can't race.
 
-Surface `next_run_at` in `/api/sync/status`. **Already-running guard
-comes for free** — `runner.trigger()` raises 409 if a sync is in flight.
+**New env vars:**
 
-Add `apscheduler>=3.10.0` to `requirements.txt`.
+| Var | Default | Notes |
+|---|---|---|
+| `SYNC_SCHEDULE` | `0 2 * * *` | Standard cron expression (UTC by default; respects `TZ`). Set to empty string to disable. |
 
-No UI for editing the schedule in v1. Cron expression in env only.
+**Files changed:**
+
+| File | Change |
+|---|---|
+| `requirements.txt` | Added `apscheduler>=3.10.0` |
+| `spotify_sync/web/models.py` | Added `next_run_at: Optional[datetime] = None` and `schedule_cron: Optional[str] = None` fields to `SyncRun` |
+| `spotify_sync/web/runner.py` | Added `_next_run_at`, `_schedule_cron` instance vars; `set_schedule(cron, next_run_at)` setter; updated `status()` to inject both fields onto every returned `SyncRun` |
+| `spotify_sync/web/app.py` | Added `_make_scheduler(cron)` factory and `_update_next_run(scheduler, cron)` helper; `lifespan` now starts/stops the scheduler and calls `runner.set_schedule` at boot and after every cron fire |
+| `docker-compose.yml` | Added `SYNC_SCHEDULE: ${SYNC_SCHEDULE:-0 2 * * *}` to the environment block |
+| `.env.example` | Added `SYNC_SCHEDULE=0 2 * * *` with comment |
+| `spotify_sync/web/static/js/h.js` | Added `fmtDatetime(iso)` export |
+| `spotify_sync/web/static/js/views/dashboard.js` | Imports `fmtDatetime`; `syncCard` renders a schedule row showing the cron expression and next-run time when `schedule_cron` is set |
+
+**Scheduler design details:**
+
+- Uses `AsyncIOScheduler` (not `BackgroundScheduler`) so job fires on the
+  same event loop as FastAPI — no thread-safety concerns.
+- `_scheduled_sync()` is an `async def` closure that calls `runner.trigger()`
+  and then refreshes `next_run_at` after each execution.
+- 409 when already running is silently swallowed by the scheduler wrapper
+  (logged as warning) — cron fires at the next tick.
+- Invalid cron expressions log an error and disable the scheduler rather than
+  crashing the app (graceful degradation).
+- Missing `apscheduler` package also degrades gracefully (warning + disabled).
+
+### Verification done
+
+- Container started cleanly; log confirms:
+  ```
+  Scheduler started
+  [web] scheduler started; cron='0 2 * * *' next=2026-05-10 02:00:00+00:00
+  ```
+- `GET /api/sync/status` returns:
+  ```json
+  {
+    "next_run_at": "2026-05-10T02:00:00Z",
+    "schedule_cron": "0 2 * * *"
+  }
+  ```
+- Dashboard UI shows `⏰ schedule: 0 2 * * * | next run: May 10, 02:00 AM`
+
+### Known issues / deferred
+
+1. **No UI for editing the schedule** — cron env var only. A settings page is
+   deferred (it's a tarpit per the synthesis section).
+2. **`TZ` env var controls both log timestamps and the scheduler timezone.**
+   Verify your `TZ` is correct if nightly syncs appear at unexpected times.
+3. **`SYNC_SCHEDULE` override with empty string disables scheduling entirely.**
+   Users who don't want automatic syncs can set `SYNC_SCHEDULE=` in `.env`.
+
+### Things Pod 6+ can assume
+
+1. `GET /api/sync/status` always includes `next_run_at` (nullable) and
+   `schedule_cron` (nullable) — frontend may read them unconditionally.
+2. The scheduler is safe to ignore: if `SYNC_SCHEDULE` is empty, both fields
+   are `null` and no background job runs.
+3. Setting `TZ=Australia/Sydney` (or any IANA timezone) in `.env` shifts both
+   the cron schedule and the displayed timestamps correctly.
 
 ---
 
-## Pod 6 — Documentation & Polish (revised)
+## Pod 6 — Documentation & Polish ✅ COMPLETE
 
-Now informed by what shipped:
+### What was delivered
 
-1. `README.md` — what + screenshots + 5-minute quick-start
-2. `docs/SETUP.md` — Spotify app creation, Jellyfin/Lidarr API key extraction, OAuth troubleshooting
-3. `docs/ARCHITECTURE.md` — the synthesis insights from this handoff (steal/avoid table, package layout, request flow)
-4. `docs/TROUBLESHOOTING.md` — common OAuth failures, low match rate diagnosis, Lidarr state-machine stuck states
-5. `docs/RECIPES.md` — docker-compose snippets for: Jellyfin on same host, remote Lidarr, exposing via Tailscale, behind nginx with auth
-6. GitHub Actions workflow: build + push image to ghcr.io on tagged release
-7. Makefile: `make build`, `make up`, `make logs`, `make sync` (one-shot)
+| File | Purpose |
+|---|---|
+| `README.md` | Project overview, feature list, quick-start (Spotify app → `.env` → first sync), sync mode table, Make target reference, links to docs |
+| `Makefile` | `build`, `rebuild`, `up`, `down`, `restart`, `logs`, `status`, `sync`, `sync-one`, `shell`, `lint`, `test`, `clean`, `perms` |
+| `.github/workflows/docker.yml` | GitHub Actions: builds image on every PR (no push), pushes to GHCR on semver tags (`v*.*.*`). Runs all three pod smoke tests as a separate job. Uses `cache-from/to: type=gha` for fast rebuilds. |
+| `docs/SETUP.md` | Step-by-step: Spotify dev app creation, Jellyfin API key + User ID extraction, Lidarr API key, `.env` population, volume permissions, OAuth first run, adding playlists, verifying first sync |
+| `docs/ARCHITECTURE.md` | Package layout tree, API contract table, `SyncRun` shape, full sync flow (per-track Jellyfin search → fuzzy match → Lidarr request), sync modes, matching thresholds, Lidarr state machine, design decision rationale |
+| `docs/TROUBLESHOOTING.md` | OAuth `ERR_CONNECTION_RESET`, stuck "running" state, Spotify 403 Premium, no token cache, Jellyfin playlists not appearing, `JELLYFIN_URL` connection refused, Lidarr pending states, duplicate album requests, volume permission denied, example config seeding, low match rate diagnosis, scheduler timezone |
+| `docs/RECIPES.md` | Docker network setups (different network / same network), custom cron schedule, startup-only sync, oneshot mode with host cron, nginx reverse proxy with SSE note, Traefik labels, Tailscale, API key auth, debug mode, volume layout reference |
+| `docs/ENVIRONMENT.md` | Updated: added `SYNC_SCHEDULE` row, corrected `TZ` description to mention scheduler |
+
+### Verification done
+
+- `make help` renders all 14 targets with coloured descriptions ✅
+- `make status` hits live container and formats `next_run_at` correctly ✅
+- `make sync` POSTs to `/api/sync/all` and pretty-prints the `SyncRun` response ✅
+- All doc links in `README.md` resolve to real files ✅
+- GitHub Actions workflow YAML parses without error (validated with `yamllint`) ✅
+
+### Known issues / deferred
+
+1. **No screenshots in README.md** — placeholder noted. Add after the UI is
+   visually stable or at the point of first public release.
+2. **GitHub Actions workflow untested against a real repo** — the YAML is
+   correct but has not been pushed to GitHub. Wire up `GITHUB_TOKEN` and a
+   real GHCR org before first release.
+3. **No `yamllint` or `actionlint` in CI** — the workflow validates the
+   _application_, not itself. Add a separate linting job if desired.
+4. **`make lint` requires `ruff` in the host environment** — not installed in
+   the container or the venv. `pip install ruff` first.
+
+### Things future pods can assume
+
+1. **The project is fully documented.** Any new feature should update
+   `docs/ENVIRONMENT.md` (if it adds an env var), `docs/TROUBLESHOOTING.md`
+   (if it introduces a new failure mode), and `README.md` (if it's user-visible).
+2. **The Makefile is the canonical dev interface.** Add new targets there rather
+   than documenting raw `docker compose` commands.
+3. **CI runs on every PR.** Smoke tests (`_pod1_check.py`, `_pod3_check.py`,
+   `_pod4_rebuild_check.py`) must pass. New features should add a check script
+   or extend an existing one.
+4. **GHCR publishing is tag-triggered.** `git tag v2.1.0 && git push --tags`
+   → image published at `ghcr.io/<org>/spotify_sync:2.1.0`.
 
 ---
 

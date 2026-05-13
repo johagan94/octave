@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
+import requests
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +62,9 @@ def make_spotify_client(cfg: dict) -> spotipy.Spotify:
 
     First run opens a browser; subsequent runs use the cached token from
     .spotify_token_cache and silently refresh it.
+
+    If user auth fails with 403 (non-premium app owner), falls back to
+    client-credentials flow which works for public playlists.
     """
     sp_cfg = cfg["spotify"]
     redirect_uri: str = sp_cfg["redirect_uri"]
@@ -83,8 +87,26 @@ def make_spotify_client(cfg: dict) -> spotipy.Spotify:
 
     if token_info and auth_manager.is_token_expired(token_info):
         log.info("Spotify: refreshing expired token…")
-        auth_manager.refresh_access_token(token_info["refresh_token"])
-        return spotipy.Spotify(auth_manager=auth_manager)
+        try:
+            auth_manager.refresh_access_token(token_info["refresh_token"])
+            return spotipy.Spotify(auth_manager=auth_manager)
+        except Exception as exc:
+            log.warning("Spotify: token refresh failed — falling back to client credentials: %s", exc)
+
+    # If we have no token or refresh failed, try client credentials first
+    try:
+        log.info("Spotify: trying client-credentials flow (public playlist access)…")
+        cc_manager = SpotifyClientCredentials(
+            client_id=sp_cfg["client_id"],
+            client_secret=sp_cfg["client_secret"],
+        )
+        sp = spotipy.Spotify(auth_manager=cc_manager)
+        # Quick test to validate
+        sp.track("4iV5W9uYEdYUVa79Axb7Rh")
+        log.info("Spotify: client-credentials OK — public playlist access only")
+        return sp
+    except Exception:
+        log.debug("Spotify: client-credentials failed, falling back to OAuth")
 
     # First-time OAuth
     auth_url = auth_manager.get_authorize_url()
@@ -153,6 +175,37 @@ def get_album_tracks(sp: spotipy.Spotify, album_id: str) -> list[dict]:
         tracks.extend(result["items"])
         result = sp.next(result) if result.get("next") else None
     return tracks
+
+
+def get_playlist_metadata(sp: spotipy.Spotify, playlist_id: str) -> dict:
+    """Return playlist name, cover image URL, and track count."""
+    data = sp.playlist(playlist_id, fields="name,images,description,tracks(total)")
+    images = sorted(
+        data.get("images", []),
+        key=lambda i: i.get("width", 0) or 0,
+        reverse=True,
+    )
+    return {
+        "name": data.get("name", ""),
+        "cover_url": images[0]["url"] if images else None,
+        "description": data.get("description", ""),
+        "track_count": data.get("tracks", {}).get("total", 0),
+    }
+
+
+def get_playlist_cover(sp: spotipy.Spotify, playlist_id: str) -> Optional[bytes]:
+    """Download the largest playlist cover image as raw bytes."""
+    meta = get_playlist_metadata(sp, playlist_id)
+    url = meta.get("cover_url")
+    if not url:
+        return None
+    try:
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        return r.content
+    except Exception as exc:
+        log.debug("Failed to download cover for %s: %s", playlist_id, exc)
+        return None
 
 
 def primary_artist(track: dict) -> str:

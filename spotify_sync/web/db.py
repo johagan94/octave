@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS sync_runs (
     matched INTEGER DEFAULT 0,
     missing INTEGER DEFAULT 0,
     albums_requested INTEGER DEFAULT 0,
+    waiting_lidarr INTEGER DEFAULT 0,
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC);
@@ -36,6 +37,20 @@ CREATE TABLE IF NOT EXISTS playlist_state (
     last_matched INTEGER,
     last_missing INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS sync_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    spotify_id TEXT NOT NULL,
+    playlist_name TEXT,
+    status TEXT NOT NULL,
+    matched INTEGER DEFAULT 0,
+    missing INTEGER DEFAULT 0,
+    albums_requested INTEGER DEFAULT 0,
+    waiting_lidarr INTEGER DEFAULT 0,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sync_items_run ON sync_items(run_id);
 """
 
 _LOCK = threading.Lock()
@@ -97,16 +112,17 @@ def finish_run(
     matched: int = 0,
     missing: int = 0,
     albums_requested: int = 0,
+    waiting_lidarr: int = 0,
     error: Optional[str] = None,
 ) -> None:
     with _LOCK, _connect() as con:
         con.execute(
             """UPDATE sync_runs
                SET status = ?, finished_at = ?, matched = ?, missing = ?,
-                   albums_requested = ?, error = ?
+                   albums_requested = ?, waiting_lidarr = ?, error = ?
                WHERE id = ?""",
             (status, finished_at.isoformat(), matched, missing,
-             albums_requested, error, run_id),
+             albums_requested, waiting_lidarr, error, run_id),
         )
 
 
@@ -121,3 +137,43 @@ def latest_run(type_: Optional[str] = None) -> Optional[sqlite3.Row]:
         else:
             cur.execute("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1")
         return cur.fetchone()
+
+
+def get_run_history(limit: int = 10) -> list[sqlite3.Row]:
+    with cursor() as cur:
+        cur.execute(
+            "SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        )
+        return cur.fetchall()
+
+
+def insert_sync_item(
+    run_id: int,
+    spotify_id: str,
+    playlist_name: str,
+    status: str,
+    matched: int = 0,
+    missing: int = 0,
+    albums_requested: int = 0,
+    waiting_lidarr: int = 0,
+    error: Optional[str] = None,
+) -> None:
+    with _LOCK, _connect() as con:
+        con.execute(
+            """INSERT INTO sync_items
+               (run_id, spotify_id, playlist_name, status,
+                matched, missing, albums_requested, waiting_lidarr, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (run_id, spotify_id, playlist_name, status,
+             matched, missing, albums_requested, waiting_lidarr, error),
+        )
+
+
+def get_sync_items(run_id: int) -> list[sqlite3.Row]:
+    with cursor() as cur:
+        cur.execute(
+            "SELECT * FROM sync_items WHERE run_id = ? ORDER BY id",
+            (run_id,),
+        )
+        return cur.fetchall()

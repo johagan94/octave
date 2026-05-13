@@ -18,9 +18,24 @@ function step(title, status, body) {
 }
 
 function statusKind(s) {
-  if (s === "done")    return "ok";
-  if (s === "pending") return "warn";
-  return "error";
+  if (s === "done" || s === "reachable") return "ok";
+  if (s === "pending" || s === "running" || s === "partial") return "warn";
+  if (s === "error" || s === "unreachable") return "error";
+  return "dim";
+}
+
+function discoveryStep(name, intg, description) {
+  const isOptional = !intg.configured;
+  const status = isOptional ? "not configured" : intg.reachable ? "reachable" : "unreachable";
+  return h("div.card",
+    h("div.card-row",
+      h("strong", name),
+      h("span.badge." + (isOptional ? "dim" : intg.reachable ? "ok" : "warn"), status),
+    ),
+    h("p", { style: { color: "var(--text-dim)", fontSize: "12px", marginTop: "4px" } }, description),
+    intg.latency_ms != null && h("small", { style: { color: "var(--text-dim)" } }, "Latency: " + intg.latency_ms + "ms"),
+    intg.error && !isOptional && h("pre", { style: { marginTop: "4px", fontSize: "11px" } }, intg.error),
+  );
 }
 
 function spotifyStep(intg) {
@@ -112,6 +127,14 @@ async function refresh() {
   containerRef.appendChild(spotifyStep(status.spotify));
   containerRef.appendChild(jellyfinStep(status.jellyfin));
   containerRef.appendChild(lidarrStep(status.lidarr));
+  if (status.listenbrainz) {
+    containerRef.appendChild(discoveryStep("ListenBrainz", status.listenbrainz,
+      "MusicBrainz ID resolution, popularity data, and collaborative filtering recommendations. Free and open-source. Set LISTENBRAINZ_TOKEN (optional)."));
+  }
+  if (status.lastfm) {
+    containerRef.appendChild(discoveryStep("Last.fm", status.lastfm,
+      "Playcounts, similar artist/track discovery, and scrobble history. Free API key required. Set LASTFM_API_KEY (optional)."));
+  }
 
   containerRef.appendChild(h("div.card", { style: { marginTop: "16px" } },
     h("div.card-row",

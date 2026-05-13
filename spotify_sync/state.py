@@ -1,10 +1,15 @@
 """Sync state persistence. State tracks Lidarr album request status across
 runs so multi-step workflows (artist add → refresh → album monitor) survive
-restarts."""
+restarts. Also tracks tracks waiting for Lidarr to download."""
 
 import json
 import os
+import threading
 from pathlib import Path
+from typing import Set
+
+# Lock for thread-safe state mutations during parallel Lidarr requests
+_state_lock = threading.Lock()
 
 
 def state_path() -> Path:
@@ -16,10 +21,21 @@ def load_state() -> dict:
     if path.exists():
         with path.open() as fh:
             return json.load(fh)
-    return {"lidarr_requested_albums": {}, "jellyfin_playlists": {}}
+    return {
+        "lidarr_requested_albums": {},
+        "waiting_for_lidarr_tracks": {},
+        "jellyfin_playlists": {},
+    }
 
 
 def save_state(state: dict) -> None:
     path = state_path()
-    with path.open("w") as fh:
-        json.dump(state, fh, indent=2)
+    with _state_lock:
+        with path.open("w") as fh:
+            json.dump(state, fh, indent=2)
+
+
+def get_waiting_track_ids(state: dict) -> Set[str]:
+    """Return Spotify track IDs currently waiting for Lidarr download."""
+    return set(state.get("waiting_for_lidarr_tracks", {}).keys())
+

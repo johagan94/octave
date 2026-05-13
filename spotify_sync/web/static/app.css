@@ -236,3 +236,23 @@ dialog menu { display: flex; gap: 8px; justify-content: flex-end; padding: 0; ma
 }
 .setup-step h3 { margin-top: 0; }
 .setup-step.done { opacity: 0.6; }
+
+/* ── Playlist cover art ──────────────────────────────────────────────── */
+img.playlist-cover {
+  width: 36px; height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  display: block;
+}
+div.playlist-cover-placeholder {
+  width: 36px; height: 36px;
+  border-radius: 4px;
+  background: var(--border);
+  opacity: 0.3;
+}
+
+/* ── Tools bar ───────────────────────────────────────────────────────── */
+.tools-bar {
+  display: flex; gap: 8px; align-items: center;
+  padding: 8px 0; margin-bottom: 8px;
+}

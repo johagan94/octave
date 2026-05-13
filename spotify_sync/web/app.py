@@ -30,6 +30,56 @@ from .runner import runner
 
 log = logging.getLogger(__name__)
 
+_DEFAULT_CRON = "0 2 * * *"  # 02:00 UTC every day
+
+
+def _make_scheduler(cron: str):
+    """Build and return an AsyncIOScheduler with the sync job wired up.
+
+    Returns None if APScheduler is not installed (graceful degradation).
+    """
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.triggers.cron import CronTrigger
+    except ImportError:
+        log.warning("[web] apscheduler not installed — scheduled sync disabled")
+        return None
+
+    tz = os.environ.get("TZ", "UTC")
+    scheduler = AsyncIOScheduler(timezone=tz)
+
+    async def _scheduled_sync():
+        log.info("[scheduler] cron fired — triggering sync")
+        try:
+            await runner.trigger("all")
+        except HTTPException as exc:
+            log.warning("[scheduler] sync skipped: %s", exc.detail)
+        except Exception:
+            log.exception("[scheduler] sync failed to start")
+        finally:
+            # Refresh next_run_at after every execution
+            _update_next_run(scheduler, cron)
+
+    try:
+        trigger = CronTrigger.from_crontab(cron, timezone=tz)
+    except Exception as exc:
+        log.error("[web] invalid SYNC_SCHEDULE %r: %s — scheduler disabled", cron, exc)
+        return None
+
+    scheduler.add_job(_scheduled_sync, trigger, id="main_sync", replace_existing=True)
+    return scheduler
+
+
+def _update_next_run(scheduler, cron: str) -> None:
+    """Push the next_run_at time from the scheduler into the runner."""
+    try:
+        job = scheduler.get_job("main_sync")
+        next_fire = job.next_run_time if job else None
+        runner.set_schedule(cron, next_fire)
+        log.debug("[scheduler] next run at %s", next_fire)
+    except Exception as exc:
+        log.warning("[scheduler] could not read next_run_time: %s", exc)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,6 +89,17 @@ async def lifespan(app: FastAPI):
     log.info("[web] startup complete; api_key_required=%s",
              bool(os.environ.get("API_KEY", "").strip()))
 
+    # ── APScheduler ───────────────────────────────────────────────────
+    cron = os.environ.get("SYNC_SCHEDULE", "").strip() or _DEFAULT_CRON
+    scheduler = _make_scheduler(cron)
+    if scheduler is not None:
+        scheduler.start()
+        _update_next_run(scheduler, cron)
+        log.info("[web] scheduler started; cron=%r next=%s", cron, runner.status().next_run_at)
+    else:
+        log.info("[web] scheduled sync disabled (no valid SYNC_SCHEDULE or apscheduler missing)")
+
+    # ── Optional startup sync ─────────────────────────────────────────
     if os.environ.get("SYNC_ON_STARTUP", "").lower() == "true":
         log.info("[web] SYNC_ON_STARTUP=true — kicking off initial sync")
         try:
@@ -49,14 +110,17 @@ async def lifespan(app: FastAPI):
             log.exception("[web] startup sync failed to enqueue")
 
     yield
+
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
     log.info("[web] shutdown")
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="spotify_sync",
-        version="2.0.0",
-        description="Spotify → Jellyfin + Lidarr sync.",
+        title="Octave",
+        version="3.0.0",
+        description="Spotify → Jellyfin + Lidarr sync. ListenBrainz & Last.fm enrichment.",
         lifespan=lifespan,
         docs_url="/api/docs",
         redoc_url=None,

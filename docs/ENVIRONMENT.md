@@ -27,6 +27,7 @@ missing; optional vars have sensible defaults.
 |---|---|---|
 | `SYNC_MODE` | `web` | `web` runs the FastAPI server; `oneshot` runs a single sync and exits (cron-friendly) |
 | `SYNC_ON_STARTUP` | `false` | If `true`, kick off a sync as soon as the web server is ready |
+| `SYNC_SCHEDULE` | `0 2 * * *` | Cron expression for automatic sync (uses `TZ` timezone). Set to empty string to disable the scheduler entirely. |
 | `WEB_HOST` | `0.0.0.0` | Bind address |
 | `WEB_PORT` | `8000` | Port the FastAPI server listens on |
 | `API_KEY` | (empty) | If set, every `/api/*` request must include `X-API-Key: <value>`. Empty = no auth (suitable for trusted home networks only) |
@@ -40,7 +41,7 @@ missing; optional vars have sensible defaults.
 | `SPOTIFY_TOKEN_CACHE` | `/app/data/.spotify_token_cache` | Spotify refresh token (treat as a secret) |
 | `LOG_FILE` | `/app/logs/spotify_sync.log` | Rotated by the host or a sidecar — the app does not rotate |
 | `LOG_LEVEL` | `INFO` | `DEBUG` for matching diagnostics |
-| `TZ` | `UTC` | Container timezone — affects timestamps in logs and (later) the scheduler |
+| `TZ` | `UTC` | Container timezone — affects timestamps in logs and the cron scheduler. Use an IANA name, e.g. `Australia/Sydney`. |
 
 ## Volume layout
 

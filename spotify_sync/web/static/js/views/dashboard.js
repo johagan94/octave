@@ -1,7 +1,7 @@
 // Dashboard: integration health, sync card with progress bar, playlist sync dropdown.
 
 import { api, ApiError } from "../api.js";
-import { h, fmtMs, fmtAge } from "../h.js";
+import { h, fmtMs, fmtAge, fmtDatetime } from "../h.js";
 import { toast } from "../toast.js";
 
 let pollTimer = 0;
@@ -92,6 +92,14 @@ function syncCard(run) {
       h("div.stat", h("span.num", String(run.matched || 0)),          h("span.label", "matched")),
       h("div.stat", h("span.num", String(run.missing || 0)),          h("span.label", "missing")),
       h("div.stat", h("span.num", String(run.albums_requested || 0)), h("span.label", "albums requested")),
+      h("div.stat", h("span.num", String(run.waiting_lidarr || 0)),   h("span.label", "waiting lidarr")),
+    ),
+
+    run.schedule_cron && h("div", { style: { marginTop: "12px", display: "flex", gap: "16px", alignItems: "center" } },
+      h("small", { style: { color: "var(--text-dim)" } },
+        "⏰ schedule: ", h("code", run.schedule_cron)),
+      run.next_run_at && h("small", { style: { color: "var(--text-dim)" } },
+        "next run: ", h("strong", fmtDatetime(run.next_run_at))),
     ),
   );
 }
@@ -144,6 +152,40 @@ async function refreshSync() {
   } catch (e) { /* ignore — next tick will retry */ }
 }
 
+function historyButton() {
+  return h("div.card", { style: { marginTop: "12px" } },
+    h("button", { onclick: () => loadHistory() }, "View sync history"),
+    h("div", { id: "history-panel", style: { marginTop: "8px" } }),
+  );
+}
+
+async function loadHistory() {
+  const panel = document.getElementById("history-panel");
+  if (!panel) return;
+  try {
+    const data = await api.get("/api/sync/history?limit=10");
+    const runs = data.runs || [];
+    if (!runs.length) {
+      panel.innerHTML = "<small style='color:var(--text-dim)'>No sync history yet.</small>";
+      return;
+    }
+    panel.innerHTML = "";
+    for (const r of runs) {
+      const statusCls = r.status === "success" ? "ok" : r.status === "error" ? "error" : "warn";
+      panel.appendChild(h("div", { style: { padding: "4px 0", fontSize: "12px", borderBottom: "1px solid var(--border)" } },
+        h("span.badge." + statusCls, { style: { marginRight: "8px" } }, r.status),
+        h("span", { style: { color: "var(--text-dim)" } }, fmtAge(r.started_at)),
+        r.matched > 0 && h("span", { style: { marginLeft: "8px", color: "var(--text)" } },
+          r.matched + " matched, " + r.missing + " missing"),
+        r.error && h("span", { style: { marginLeft: "8px", color: "var(--error)", fontSize: "11px" } },
+          r.error.substring(0, 80)),
+      ));
+    }
+  } catch (e) {
+    panel.innerHTML = "<small style='color:var(--error)'>Failed to load history.</small>";
+  }
+}
+
 let containerRef = null;
 function render() {
   if (!mounted || !containerRef) return;
@@ -151,14 +193,24 @@ function render() {
 
   if (runCache) {
     containerRef.appendChild(syncCard(runCache));
+    if (runCache.status !== "idle") {
+      containerRef.appendChild(historyButton());
+    }
   }
 
   if (setupCache) {
-    const grid = h("div.grid-3",
+    const cards = [
       integrationCard("Spotify",  setupCache.spotify),
       integrationCard("Jellyfin", setupCache.jellyfin),
       integrationCard("Lidarr",   setupCache.lidarr),
-    );
+    ];
+    if (setupCache.listenbrainz) {
+      cards.push(integrationCard("ListenBrainz", setupCache.listenbrainz));
+    }
+    if (setupCache.lastfm) {
+      cards.push(integrationCard("Last.fm", setupCache.lastfm));
+    }
+    const grid = h("div.grid-3", ...cards);
     containerRef.appendChild(grid);
 
     const stats = h("div.card",

@@ -39,6 +39,9 @@ class SyncRun(BaseModel):
     matched: int = 0
     missing: int = 0
     albums_requested: int = 0
+    waiting_lidarr: int = 0
+    next_run_at: Optional[datetime] = None
+    schedule_cron: Optional[str] = None
 
 
 class IntegrationStatus(BaseModel):
@@ -53,6 +56,8 @@ class SetupStatus(BaseModel):
     spotify: IntegrationStatus
     jellyfin: IntegrationStatus
     lidarr: IntegrationStatus
+    listenbrainz: Optional[IntegrationStatus] = None
+    lastfm: Optional[IntegrationStatus] = None
     config_loaded: bool = False
     playlist_count: int = 0
 
@@ -63,6 +68,8 @@ class PlaylistEntry(BaseModel):
     spotify_playlist_id: str
     jellyfin_playlist_name: Optional[str] = None
     sync_mode: Literal["add_only", "full_sync", "rebuild"] = "add_only"
+    cover_url: Optional[str] = None
+    min_interval_hours: Optional[int] = None
 
 
 class HealthInfo(BaseModel):

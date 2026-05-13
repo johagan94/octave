@@ -8,14 +8,19 @@ import logging
 import sys
 from typing import Callable, Optional
 
+import os
+
 from .config import load_config
 from .jellyfin_client import JellyfinClient
+from .lastfm import LastFMClient
 from .lidarr_client import LidarrClient
+from .listenbrainz import ListenBrainzClient
 from .logging_setup import configure_logging
 from .musicbrainz import MusicBrainzResolver
 from .spotify_client import make_spotify_client
 from .state import load_state, save_state
 from .sync import sync_playlist
+from .track_cache import TrackCache
 
 log = logging.getLogger(__name__)
 
@@ -30,20 +35,26 @@ def run_sync(
 
     ``playlist_ids`` — if provided, only sync playlists whose
     ``spotify_playlist_id`` is in the list. ``None`` means sync all.
-
-    Caller is responsible for configuring logging (FastAPI does this once
-    at startup; ``main()`` does it for CLI invocation). ``progress_cb``,
-    if provided, is invoked as ``progress_cb(playlist_num, playlist_total)``
-    after each playlist completes — the runner uses this to update SyncRun.
     """
     cfg = load_config()
     state = load_state()
     state["current_run"] = datetime.datetime.utcnow().isoformat()
 
+    # Load track cache for faster matching across runs
+    track_cache = TrackCache()
+    track_cache.load()
+
     sp = make_spotify_client(cfg)
-    jf = JellyfinClient(cfg)
+    jf = JellyfinClient(cfg, track_cache=track_cache)
     lidarr = LidarrClient(cfg)
     mb = MusicBrainzResolver()
+    lb = ListenBrainzClient() if os.environ.get("LISTENBRAINZ_TOKEN") else None
+    lfm = LastFMClient() if os.environ.get("LASTFM_API_KEY") else None
+
+    # Validate track cache against current Jellyfin library
+    jf._build_index()
+    valid_ids = {item["Id"] for item in (jf._library_cache or [])}
+    track_cache.validate(valid_ids)
 
     all_playlists = cfg.get("playlists", [])
     if not all_playlists:
@@ -58,15 +69,19 @@ def run_sync(
     if not playlists:
         raise RuntimeError(f"No matching playlists found for ids: {playlist_ids}")
 
-    totals = {"matched": 0, "missing": 0, "albums_requested": 0, "playlists": 0}
+    totals = {
+        "matched": 0, "missing": 0, "albums_requested": 0,
+        "playlists": 0, "waiting_lidarr": 0,
+    }
     total = len(playlists)
     for n, pl_cfg in enumerate(playlists, 1):
         try:
-            stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total)
+            stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm)
             if stats:
                 totals["matched"] += stats.get("matched", 0)
                 totals["missing"] += stats.get("missing", 0)
                 totals["albums_requested"] += stats.get("albums_requested", 0)
+                totals["waiting_lidarr"] += stats.get("waiting_lidarr", 0)
                 totals["playlists"] += 1
         except Exception as exc:
             log.exception(
@@ -80,11 +95,21 @@ def run_sync(
                 except Exception:
                     log.exception("progress_cb raised; ignoring")
 
+    # Save track cache for next run
+    cache_stats = jf.get_cache_stats()
+    log.info(
+        "Track cache: %d entries, %d hits, %d misses this run",
+        len(track_cache), cache_stats["hits"], cache_stats["misses"],
+    )
+    track_cache.save()
+
     log.info("═" * 60)
     log.info(
-        "Sync complete. playlists=%d matched=%d missing=%d albums_requested=%d",
+        "Sync complete. playlists=%d matched=%d missing=%d "
+        "albums_requested=%d waiting_lidarr=%d",
         totals["playlists"], totals["matched"],
         totals["missing"], totals["albums_requested"],
+        totals["waiting_lidarr"],
     )
     save_state(state)
     return totals
@@ -95,8 +120,6 @@ def main() -> None:
     try:
         run_sync()
     except (RuntimeError, Exception) as exc:  # noqa: BLE001 — top-level CLI handler
-        # ConfigError (subclass of RuntimeError) covers missing env / bad config.
-        # Anything else is a genuine bug; both should produce a non-zero exit.
         log.error("%s: %s", type(exc).__name__, exc)
         sys.exit(1)
 

@@ -37,6 +37,8 @@ class SyncRunner:
         self._lock = asyncio.Lock()
         self._current: Optional[SyncRun] = None
         self._last: Optional[SyncRun] = None
+        self._next_run_at: Optional[datetime] = None
+        self._schedule_cron: Optional[str] = None
 
     def load_last_from_db(self) -> None:
         """Hydrate ``_last`` from the most recent sync_runs row.
@@ -69,6 +71,7 @@ class SyncRunner:
                 matched=row["matched"] or 0,
                 missing=row["missing"] or 0,
                 albums_requested=row["albums_requested"] or 0,
+                waiting_lidarr=row["waiting_lidarr"] or 0,
                 error=error,
             )
         except Exception as exc:
@@ -76,12 +79,17 @@ class SyncRunner:
 
     # ── Public API ────────────────────────────────────────────────────
 
+    def set_schedule(self, cron: str, next_run_at: Optional[datetime]) -> None:
+        """Called by app.py after the scheduler starts, and after each job fires."""
+        self._schedule_cron = cron
+        self._next_run_at = next_run_at
+
     def status(self) -> SyncRun:
-        if self._current is not None:
-            return self._current
-        if self._last is not None:
-            return self._last
-        return SyncRun(status="idle")
+        base = self._current or self._last or SyncRun(status="idle")
+        # Inject scheduler info so the frontend always gets it.
+        base.next_run_at = self._next_run_at
+        base.schedule_cron = self._schedule_cron
+        return base
 
     async def trigger(
         self,
@@ -131,12 +139,14 @@ class SyncRunner:
             run.matched = totals.get("matched", 0)
             run.missing = totals.get("missing", 0)
             run.albums_requested = totals.get("albums_requested", 0)
+            run.waiting_lidarr = totals.get("waiting_lidarr", 0)
             run.status = "success"
             run.finished_at = _now()
             db.finish_run(
                 run_id, "success", run.finished_at,
                 matched=run.matched, missing=run.missing,
                 albums_requested=run.albums_requested,
+                waiting_lidarr=run.waiting_lidarr,
             )
             log.info("[runner] sync OK in %s",
                      run.finished_at - run.started_at if run.started_at else "?")
