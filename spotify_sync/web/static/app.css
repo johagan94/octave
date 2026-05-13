@@ -292,10 +292,99 @@ div.playlist-cover-placeholder {
 .missing-track-row td { padding: 6px 10px; }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
+
+/* Tablet */
+@media (max-width: 900px) {
+  .grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  main { padding: 20px 16px; }
+  .card { padding: 16px; }
+  .card-row { gap: 10px; }
+  .stats { gap: 24px; }
+  .stat .num { font-size: 26px; }
+}
+
+/* Phone */
 @media (max-width: 640px) {
-  header { flex-wrap: wrap; gap: 12px; padding: 10px 16px; }
-  nav { order: 3; width: 100%; overflow-x: auto; }
-  main { padding: 16px; }
+  /* Header */
+  header { flex-wrap: wrap; gap: 10px; padding: 10px 14px; }
+  .brand h1 { font-size: 15px; }
+  .dot { width: 8px; height: 8px; }
+  nav {
+    order: 3; width: 100%; overflow-x: auto;
+    gap: 0; padding-bottom: 2px;
+  }
+  nav a { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+  .header-actions { margin-left: auto; }
+
+  /* View */
+  main { padding: 14px 12px; }
+
+  /* Cards & layout */
+  .card { padding: 14px; margin-bottom: 10px; }
+  .card-row { gap: 8px; }
+  .grid-3, .grid-4 { grid-template-columns: 1fr; gap: 10px; }
+
+  /* Typography */
+  h2 { font-size: 18px; }
+  h3 { font-size: 12px; }
+
+  /* Stats */
   .stats { gap: 16px; }
-  .stat .num { font-size: 24px; }
+  .stat .num { font-size: 22px; }
+  .stat .label { font-size: 9px; }
+
+  /* Tables — horizontal scroll wrapper */
+  .card:has(table) { padding: 14px 0 0 0; overflow: hidden; }
+  .card:has(table) > * { padding-left: 14px; padding-right: 14px; }
+  .card:has(table) > table { padding: 0; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 520px; }
+  th, td { padding: 8px 10px; font-size: 12px; }
+  th { font-size: 9px; }
+  td .id { font-size: 10px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+
+  /* Buttons */
+  button, .btn { padding: 8px 14px; font-size: 12px; }
+
+  /* Sync controls */
+  #sync-select { max-width: none; flex: 1; min-width: 0; }
+
+  /* Forms */
+  .field { margin-bottom: 10px; }
+  input, select, textarea { padding: 8px 10px; font-size: 12px; }
+  textarea { min-height: 160px; }
+
+  /* Logs */
+  .log-area { height: 50vh; font-size: 11px; padding: 10px; }
+
+  /* Toast */
+  #toast {
+    left: 12px; right: 12px; bottom: 12px;
+    min-width: 0; max-width: none;
+  }
+
+  /* Dialog */
+  dialog { min-width: 0; width: calc(100vw - 32px); max-width: 400px; padding: 18px; }
+
+  /* Setup */
+  .setup-step { padding: 14px 16px; }
+
+  /* Empty state */
+  .empty { padding: 48px 16px; font-size: 13px; }
+  .empty::before { font-size: 24px; }
+
+  /* Bulk bar */
+  #bulk-bar { flex-wrap: wrap; gap: 6px; font-size: 11px; }
+  #bulk-bar button { font-size: 11px; padding: 6px 10px; }
+}
+
+/* Small phone */
+@media (max-width: 400px) {
+  header { padding: 8px 10px; }
+  .brand h1 { font-size: 14px; }
+  nav a { padding: 5px 8px; font-size: 11px; }
+  main { padding: 10px 8px; }
+  .card { padding: 12px; }
+  .stat .num { font-size: 20px; }
+  .stats { gap: 12px; }
 }
