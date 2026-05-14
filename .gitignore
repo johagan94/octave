@@ -42,3 +42,7 @@ Thumbs.db
 files/
 files.zip
 files.zipZone.Identifier
+
+# Dev-only test scripts
+_pod*
+_test*
