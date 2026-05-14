@@ -1,37 +1,25 @@
 {
-  "_comment": "Non-secret settings only. All credentials go in .env (see .env.example).",
+  "_comment": "Non-secret settings. All credentials go in .env (see .env.example).",
 
   "jellyfin": {
-    "url": "http://192.168.76.142:8096"
+    "url": "http://jellyfin:8096",
+    "music_library_id": ""
   },
 
   "lidarr": {
-    "url": "http://192.168.76.142:8686",
-    "_quality_comment": "Run: curl -H 'X-Api-Key: KEY' http://LIDARR/api/v1/qualityprofile",
+    "url": "http://lidarr:8686",
     "quality_profile_id": 1,
-    "_metadata_comment": "Run: curl -H 'X-Api-Key: KEY' http://LIDARR/api/v1/metadataprofile",
     "metadata_profile_id": 1,
-    "_root_folder_comment": "Leave blank to auto-detect from Lidarr",
     "root_folder": ""
   },
 
-  "_match_threshold_comment": "Fuzzy match strictness 0-100. 80 is a safe default.",
   "match_threshold": 80,
 
   "playlists": [
     {
-      "_comment": "Playlist ID is the part after /playlist/ in the Spotify share URL",
       "spotify_playlist_id": "37i9dQZF1DXcBWIGoYBM5M",
       "jellyfin_playlist_name": "Today's Top Hits",
-      "_sync_mode_comment": "add_only = never remove tracks | full_sync = mirror Spotify, remove stale | rebuild = wipe and recreate from scratch every run (preserves Spotify track order, cleans drift)",
       "sync_mode": "add_only"
     }
   ]
 }
-
-
-
-# Get user ID
-curl -s "http://192.168.76.142:8096/Users" \
-  -H "X-Emby-Authorization: MediaBrowser Token=$(grep JELLYFIN_API_KEY .env | cut -d= -f2)" \
-  | python3 -m json.tool | grep -E '"Name"|"Id"'

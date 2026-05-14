@@ -1,53 +1,29 @@
-# docker-compose.yml — single-service deployment of spotify_sync.
-#
-# Quick start:
-#   1. Copy .env.example to .env and fill in your credentials.
-#   2. docker compose up -d
-#   3. First run: open http://<host>:8000/ to complete Spotify OAuth.
-#
-# The Spotify OAuth callback uses port 8888 by default. If your container
-# host is not the same machine as your browser, set
-# SPOTIFY_REDIRECT_URI=http://<host>:8888/callback in .env and forward 8888.
-
 services:
-  spotify-sync:
+  octave:
     build: .
-    image: spotify-sync:local
-    container_name: spotify-sync
+    container_name: octave
     restart: unless-stopped
-
-    environment:
-      # --- Required (set in .env) ---
-      SPOTIFY_CLIENT_ID:     ${SPOTIFY_CLIENT_ID}
-      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
-      SPOTIFY_REDIRECT_URI:  ${SPOTIFY_REDIRECT_URI:-http://127.0.0.1:8888/callback}
-      JELLYFIN_API_KEY:      ${JELLYFIN_API_KEY}
-      JELLYFIN_USER_ID:      ${JELLYFIN_USER_ID}
-      JELLYFIN_URL:          ${JELLYFIN_URL}
-      LIDARR_API_KEY:        ${LIDARR_API_KEY}
-      LIDARR_URL:            ${LIDARR_URL}
-
-      # --- Optional ---
-      SYNC_MODE:        ${SYNC_MODE:-web}
-      SYNC_ON_STARTUP:  ${SYNC_ON_STARTUP:-false}
-      SYNC_SCHEDULE:    ${SYNC_SCHEDULE:-0 2 * * *}   # cron; empty string = disabled
-      LOG_LEVEL:        ${LOG_LEVEL:-INFO}
-      TZ:               ${TZ:-UTC}
-      WEB_PORT:         ${WEB_PORT:-8000}
-      API_KEY:          ${API_KEY:-}     # empty = no auth on local API
-
     ports:
-      - "${WEB_PORT:-8000}:8000"   # FastAPI
-      - "8888:8888"                # Spotify OAuth callback (first run only)
-
+      - "8000:8000"
+      - "8888:8888"
     volumes:
-      - ./config:/app/config
-      - ./data:/app/data
-      - ./logs:/app/logs
-
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      - ./config:/app/config:rw
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+    environment:
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI:-http://127.0.0.1:8888/callback}
+      - JELLYFIN_URL=${JELLYFIN_URL}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+      - JELLYFIN_USER_ID=${JELLYFIN_USER_ID}
+      - LIDARR_URL=${LIDARR_URL}
+      - LIDARR_API_KEY=${LIDARR_API_KEY}
+      - SYNC_MODE=${SYNC_MODE:-web}
+      - SYNC_ON_STARTUP=${SYNC_ON_STARTUP:-false}
+      - SYNC_SCHEDULE=${SYNC_SCHEDULE:-0 2 * * *}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=${TZ:-UTC}
+      - API_KEY=${API_KEY:-}
+      - LISTENBRAINZ_TOKEN=${LISTENBRAINZ_TOKEN:-}
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
