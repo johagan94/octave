@@ -7,8 +7,6 @@ Values are persisted to ``settings.json`` in the data directory.
 from __future__ import annotations
 
 import logging
-import secrets
-import string
 
 from fastapi import APIRouter, HTTPException
 
@@ -35,12 +33,3 @@ def update_settings(body: dict):
 
     result = save_settings(body)
     return ok(data={"saved": list(body.keys()), "settings": result})
-
-
-@router.post("/rotate-api-key")
-def rotate_api_key():
-    """Generate a new random API key and save it."""
-    alphabet = string.ascii_letters + string.digits
-    new_key = "".join(secrets.choice(alphabet) for _ in range(48))
-    save_settings({"API_KEY": new_key})
-    return ok(data={"api_key": new_key})

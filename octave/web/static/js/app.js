@@ -1,7 +1,7 @@
-// Entry point. Registers views, starts the router, wires API-key dialog.
+// Entry point. Registers views and starts the router.
+// Auth is handled by the browser via HTTP Basic Auth (no JS involvement needed).
 
 import { register, start } from "./router.js";
-import { getApiKey, setApiKey } from "./api.js";
 
 import dashboard from "./views/dashboard.js";
 import playlists from "./views/playlists.js";
@@ -18,22 +18,6 @@ register("setup",     setup);
 register("config",    config);
 register("missing",   missing);
 register("settings",  settings);
-
-// API-key dialog
-const dialog = document.getElementById("api-key-dialog");
-const input  = document.getElementById("api-key-input");
-const saveBtn = document.getElementById("api-key-save");
-
-document.getElementById("api-key-btn").addEventListener("click", () => {
-  input.value = getApiKey();
-  dialog.showModal();
-});
-
-saveBtn.addEventListener("click", () => {
-  setApiKey(input.value.trim());
-  // Reload so all views re-fetch with the new key
-  location.reload();
-});
 
 // Default route
 if (!location.hash) location.hash = "#/dashboard";

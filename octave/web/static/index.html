@@ -25,24 +25,11 @@
     <a href="#/settings" data-route="settings">Settings</a>
     <a href="#/setup" data-route="setup">Setup</a>
   </nav>
-  <div class="header-actions">
-    <button id="api-key-btn" title="Set API key" class="icon-btn">&#128273;</button>
-  </div>
 </header>
 
 <main id="view"></main>
 
-<dialog id="api-key-dialog">
-  <form method="dialog">
-    <h3>API key</h3>
-    <p>Required if the server has <code>API_KEY</code> set. Stored in browser localStorage only � never sent to anything except this server.</p>
-    <input id="api-key-input" type="password" placeholder="leave blank if no auth" autocomplete="off">
-    <menu>
-      <button value="cancel">Cancel</button>
-      <button id="api-key-save" value="save">Save</button>
-    </menu>
-  </form>
-</dialog>
+<div id="toast"></div>
 
 <script type="module" src="/js/app.js"></script>
 </body>

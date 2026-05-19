@@ -29,7 +29,8 @@ SECRET_KEYS = [
     "LIDARR_API_KEY",
     "LISTENBRAINZ_TOKEN",
     "LASTFM_API_KEY",
-    "API_KEY",
+    "AUTH_USERNAME",
+    "AUTH_PASSWORD",
 ]
 
 # Non-secret runtime knobs that can also be tweaked from the UI.
@@ -128,7 +129,7 @@ def save_settings(updates: dict) -> dict:
         tmp.replace(path)
         log.info("settings saved to %s", path)
 
-        # Also update os.environ for in-process hot-reload of the API_KEY
+        # Also update os.environ for in-process hot-reload of AUTH credentials
         # and other creds that are read on every request.
         for key, value in raw.items():
             if key in ALL_KEYS and not os.environ.get(key, "").strip():

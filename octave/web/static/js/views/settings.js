@@ -1,7 +1,7 @@
 // Settings view: form-based credential and runtime-knob editor.
 // Secrets are masked by default with a show/hide toggle.
 
-import { api, getApiKey, setApiKey } from "../api.js";
+import { api } from "../api.js";
 import { h } from "../h.js";
 import { toast } from "../toast.js";
 
@@ -63,13 +63,11 @@ const SECTIONS = [
   },
   {
     title: "Security",
-    description: "API key protection for the web interface.",
-    help: "When set, every /api/* request requires X-API-Key header. Leave empty for LAN-trust mode.",
+    description: "HTTP Basic Auth for the web interface.",
+    help: "Set a password to protect Octave with HTTP Basic Auth. The browser handles the login prompt natively — no page reload or extra steps needed. Leave Password blank for open access (LAN-trust mode). Username defaults to 'octave' if left blank.",
     fields: [
-      { key: "API_KEY", label: "API Key", type: "password", required: false },
-    ],
-    actions: [
-      { label: "Generate & Rotate", action: "rotateApiKey" },
+      { key: "AUTH_USERNAME", label: "Username", type: "text", required: false, placeholder: "octave" },
+      { key: "AUTH_PASSWORD", label: "Password", type: "password", required: false },
     ],
   },
   {
@@ -219,23 +217,6 @@ function startSpotifyPolling() {
 }
 
 async function handleAction(action) {
-  if (action === "rotateApiKey") {
-    try {
-      var res = await api.post("/api/settings/rotate-api-key");
-      var inp = document.querySelector('input[data-key="API_KEY"]');
-      if (inp) {
-        inp.value = res.api_key;
-        inp.type = "text";
-      }
-      if (res.api_key) {
-        setApiKey(res.api_key);
-      }
-      toast("New API key generated -- copy it now, it will not be shown again");
-    } catch (e) {
-      toast("Failed: " + e.message, "error");
-    }
-  }
-
   if (action === "connectSpotify") {
     // Save Client ID first so the server can use it
     var clientIdEl = document.getElementById("SPOTIFY_CLIENT_ID");
@@ -314,19 +295,9 @@ function render(settings) {
 
 async function save() {
   var updates = collectUpdates();
-
-  // If API key is being changed, store it in localStorage BEFORE saving
-  // so the subsequent load() call succeeds
-  if (updates.API_KEY) {
-    setApiKey(updates.API_KEY);
-  }
-
   try {
     await api.put("/api/settings", updates);
     toast("Settings saved");
-
-    // API key might have changed server-side auth state --
-    // reload will use the key we just stored in localStorage
     await load();
   } catch (e) {
     toast("Save failed: " + e.message, "error");
@@ -335,9 +306,6 @@ async function save() {
 
 async function saveAndTest() {
   var updates = collectUpdates();
-  if (updates.API_KEY) {
-    setApiKey(updates.API_KEY);
-  }
 
   try {
     await api.put("/api/settings", updates);

@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..logging_setup import configure_logging
 from . import db
-from .auth import require_api_key
+from .auth import require_auth
 from .envelope import err
 from .models import ApiError, ApiResponse
 from .routes import config as config_route
@@ -149,7 +149,7 @@ def create_app() -> FastAPI:
     app.include_router(public_router)
 
     # All other /api/* routes -- gated by optional X-API-Key
-    api_router = APIRouter(prefix="/api", dependencies=[Depends(require_api_key)])
+    api_router = APIRouter(prefix="/api", dependencies=[Depends(require_auth)])
     api_router.include_router(setup.router)
     api_router.include_router(sync_route.router)
     api_router.include_router(logs.router)

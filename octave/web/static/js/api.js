@@ -1,16 +1,8 @@
-// fetch wrapper. Always reads localStorage.api_key, unwraps the {data, error}
-// envelope, throws a typed-ish error on non-2xx. Single source of HTTP truth.
-
-const API_KEY_STORAGE = "octave_api_key";
-
-export function getApiKey() {
-  return localStorage.getItem(API_KEY_STORAGE) || "";
-}
-
-export function setApiKey(value) {
-  if (value) localStorage.setItem(API_KEY_STORAGE, value);
-  else       localStorage.removeItem(API_KEY_STORAGE);
-}
+// fetch wrapper. Unwraps the {data, error} envelope, throws a typed-ish
+// error on non-2xx. Auth is handled by the browser via HTTP Basic Auth —
+// on the first 401 the browser shows its native credential dialog, caches
+// the credentials, and sends them with every subsequent request (including
+// EventSource). No custom auth headers or localStorage management needed.
 
 class ApiError extends Error {
   constructor(code, message, status, details) {
@@ -23,8 +15,6 @@ class ApiError extends Error {
 
 async function request(method, path, body) {
   const headers = { "Accept": "application/json" };
-  const key = getApiKey();
-  if (key) headers["X-API-Key"] = key;
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
   let resp;
@@ -39,7 +29,7 @@ async function request(method, path, body) {
   }
 
   let json = null;
-  try { json = await resp.json(); } catch (_) { /* not all responses are JSON (eg SSE) */ }
+  try { json = await resp.json(); } catch (_) { /* SSE and other non-JSON responses */ }
 
   if (!resp.ok) {
     const code = json?.error?.code || `http_${resp.status}`;

@@ -1,6 +1,6 @@
 // Logs view: initial tail via /api/logs, then live SSE stream.
 
-import { api, getApiKey } from "../api.js";
+import { api } from "../api.js";
 import { h } from "../h.js";
 import { toast } from "../toast.js";
 
@@ -29,10 +29,9 @@ function appendLine(text) {
 function startStream() {
   if (evtSource) evtSource.close();
 
-  // EventSource can't set custom headers, so pass the API key as a query
-  // param. The server's auth dependency accepts it from either location.
-  const key = getApiKey();
-  const url = "/api/logs/stream" + (key ? "?api_key=" + encodeURIComponent(key) : "");
+  // Browser automatically includes Basic Auth credentials on same-origin
+  // EventSource connections — no custom headers or query params needed.
+  const url = "/api/logs/stream";
 
   evtSource = new EventSource(url);
   evtSource.addEventListener("log", (e) => {

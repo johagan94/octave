@@ -1,43 +1,66 @@
-"""Optional X-API-Key gate. Empty ``API_KEY`` env var = auth disabled.
+"""HTTP Basic Auth gate.
 
-Reads from os.environ first, then falls back to the persistent settings.json
-store so that the API key can be configured entirely from the UI.
+Set AUTH_PASSWORD (and optionally AUTH_USERNAME) via env var or the Settings
+UI to protect the API. Leaving AUTH_PASSWORD empty disables auth entirely
+(LAN-trust mode — suitable when Octave is behind a reverse proxy or VPN).
 
-Apply as a router-level dependency on the protected ``/api`` router.
-``/api/health`` is intentionally exempt so the Docker healthcheck works
-even if the user has not configured a key (or if they later rotate it).
+FastAPI's HTTPBasic triggers the browser's native credential dialog on the
+first unauthenticated request. The browser caches the credentials and sends
+them with every subsequent request — including EventSource (SSE log tail) —
+with no extra JS plumbing required.
+
+Only /api/health is exempt (Docker healthcheck must not need credentials).
 """
 
 from __future__ import annotations
 
 import os
+import secrets
 
-from fastapi import Header, HTTPException, Request
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+
+_security = HTTPBasic(auto_error=False)
 
 
-def _get_api_key() -> str:
-    """Return the configured API key.  Env var takes priority, then
-    settings.json."""
-    env_val = os.environ.get("API_KEY", "").strip()
-    if env_val:
-        return env_val
+def _get_credentials() -> tuple[str, str]:
+    """Return (username, password). Empty password means auth is disabled."""
     try:
         from .settings import get_setting
-        return get_setting("API_KEY")
+        password = get_setting("AUTH_PASSWORD").strip()
+        username = get_setting("AUTH_USERNAME").strip() or "octave"
+        return username, password
     except Exception:
-        return ""
+        return "octave", ""
 
 
-def require_api_key(
-    request: Request,
-    x_api_key: str | None = Header(default=None),
+def require_auth(
+    credentials: HTTPBasicCredentials | None = Depends(_security),
 ) -> None:
-    expected = _get_api_key()
-    if not expected:
+    """FastAPI dependency — enforces Basic Auth when AUTH_PASSWORD is set."""
+    username, password = _get_credentials()
+    if not password:
         return  # auth disabled
-    # Accept key from header OR ?api_key= query param.
-    # The query-param path is needed for EventSource (SSE) because browsers
-    # cannot set custom headers on EventSource connections.
-    provided = x_api_key or request.query_params.get("api_key")
-    if provided != expected:
-        raise HTTPException(status_code=401, detail="invalid_api_key")
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": 'Basic realm="Octave"'},
+        )
+
+    # Use constant-time comparison to prevent timing attacks
+    ok_user = secrets.compare_digest(
+        credentials.username.encode("utf-8"),
+        username.encode("utf-8"),
+    )
+    ok_pass = secrets.compare_digest(
+        credentials.password.encode("utf-8"),
+        password.encode("utf-8"),
+    )
+    if not (ok_user and ok_pass):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": 'Basic realm="Octave"'},
+        )

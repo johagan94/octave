@@ -41,7 +41,8 @@ services:
       - SYNC_SCHEDULE=${SYNC_SCHEDULE:-0 2 * * *}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-UTC}
-      - API_KEY=${API_KEY:-}
+      - AUTH_USERNAME=${AUTH_USERNAME:-octave}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-}
       - LISTENBRAINZ_TOKEN=${LISTENBRAINZ_TOKEN:-}
       - LASTFM_API_KEY=${LASTFM_API_KEY:-}
 
