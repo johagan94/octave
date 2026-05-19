@@ -24,6 +24,32 @@ def _token_cache_path() -> Path:
     return Path(os.environ.get("SPOTIFY_TOKEN_CACHE", ".spotify_token_cache"))
 
 
+def _try_pkce_client() -> Optional[spotipy.Spotify]:
+    """Return a Spotify client from the persisted PKCE token, or None.
+
+    A user-authorized PKCE token grants full private-playlist access and
+    must be preferred over client-credentials (public-only) even when a
+    client_secret also happens to be configured.
+    """
+    from octave.spotify_auth import get_valid_access_token
+    token = get_valid_access_token()
+    if token:
+        log.info("Spotify: using PKCE access token (user-authorized)")
+        return spotipy.Spotify(auth=token)
+    return None
+
+
+def _make_pkce_client(client_id: str) -> spotipy.Spotify:
+    """Return a Spotify client using the persisted PKCE token, or raise."""
+    sp = _try_pkce_client()
+    if sp is not None:
+        return sp
+    raise RuntimeError(
+        "Spotify not authorized via PKCE. "
+        "Open Octave Settings and click 'Connect Spotify'."
+    )
+
+
 class _OAuthCallbackHandler(BaseHTTPRequestHandler):
     """Minimal HTTP handler that captures the ?code= from Spotify's redirect."""
 
@@ -58,21 +84,32 @@ def _run_local_server(port: int) -> HTTPServer:
 
 
 def make_spotify_client(cfg: dict) -> spotipy.Spotify:
-    """Return an authenticated Spotify client (Authorization Code flow).
+    """Return an authenticated Spotify client.
 
-    First run opens a browser; subsequent runs use the cached token from
-    .spotify_token_cache and silently refresh it.
-
-    If user auth fails with 403 (non-premium app owner), falls back to
-    client-credentials flow which works for public playlists.
+    When client_secret is absent: uses the PKCE token stored by the web UI.
+    When client_secret is present: uses Authorization Code flow (legacy) with
+    an in-process callback server, falling back to client-credentials for
+    public playlists if user auth fails.
     """
     sp_cfg = cfg["spotify"]
-    redirect_uri: str = sp_cfg["redirect_uri"]
+    client_secret: str = sp_cfg.get("client_secret", "").strip()
+
+    # A valid user-authorized PKCE token always wins: it grants private
+    # playlist access. Only fall back to the legacy/client-credentials
+    # path if no PKCE token exists (even when a client_secret is set).
+    pkce = _try_pkce_client()
+    if pkce is not None:
+        return pkce
+
+    if not client_secret:
+        return _make_pkce_client(sp_cfg["client_id"])
+
+    redirect_uri: str = sp_cfg.get("redirect_uri", "http://127.0.0.1:8888/callback")
     port = int(urlparse(redirect_uri).port or 8888)
 
     auth_manager = SpotifyOAuth(
         client_id=sp_cfg["client_id"],
-        client_secret=sp_cfg["client_secret"],
+        client_secret=client_secret,
         redirect_uri=redirect_uri,
         scope=SPOTIFY_SCOPES,
         cache_path=str(_token_cache_path()),
@@ -144,6 +181,41 @@ def make_spotify_client(cfg: dict) -> spotipy.Spotify:
     log.info("=" * 60)
 
     return spotipy.Spotify(auth_manager=auth_manager)
+
+
+def get_user_playlists(sp: spotipy.Spotify) -> list[dict]:
+    """Return all playlists in the authenticated user's library.
+
+    Includes both owned and followed/saved playlists (paginated).
+    Spotify-owned editorial/algorithmic playlists (owner id == "spotify",
+    e.g. "Today's Top Hits") are skipped — the Web API returns 404 for
+    those since Spotify's Nov-2024 deprecation, so syncing them is futile.
+
+    Each entry matches the config.json playlist shape so the sync loop
+    can consume it directly.
+    """
+    discovered: list[dict] = []
+    skipped_editorial = 0
+    result = sp.current_user_playlists(limit=50)
+    while result:
+        for pl in result.get("items", []):
+            if not pl or not pl.get("id"):
+                continue
+            owner = (pl.get("owner") or {}).get("id", "")
+            if owner == "spotify":
+                skipped_editorial += 1
+                continue
+            discovered.append({
+                "spotify_playlist_id": pl["id"],
+                "jellyfin_playlist_name": pl.get("name") or f"Spotify – {pl['id']}",
+                "sync_mode": "add_only",
+            })
+        result = sp.next(result) if result.get("next") else None
+    log.info(
+        "Spotify: discovered %d user playlists (skipped %d Spotify-owned editorial)",
+        len(discovered), skipped_editorial,
+    )
+    return discovered
 
 
 def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str) -> list[dict]:

@@ -211,8 +211,10 @@ def sync_playlist(
 ) -> dict:
     """Sync one playlist; returns ``{matched, missing, albums_requested, waiting_lidarr}``."""
     spotify_id = playlist_cfg["spotify_playlist_id"]
-    jf_name = playlist_cfg.get("jellyfin_playlist_name", f"Spotify – {spotify_id}")
-    sync_mode = playlist_cfg.get("sync_mode", "add_only")
+    # Use .get() OR-fallback (not the default arg): an explicit None value
+    # in the dict would otherwise pass through as the literal name "None".
+    jf_name = playlist_cfg.get("jellyfin_playlist_name") or f"Spotify – {spotify_id}"
+    sync_mode = playlist_cfg.get("sync_mode") or "add_only"
 
     log.info("═" * 60)
     log.info(

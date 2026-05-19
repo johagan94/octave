@@ -1,4 +1,4 @@
-"""Entry point for ``python -m spotify_sync`` and the importable
+"""Entry point for ``python -m octave`` and the importable
 ``run_sync()`` used by the FastAPI runner."""
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from .lidarr_client import LidarrClient
 from .listenbrainz import ListenBrainzClient
 from .logging_setup import configure_logging
 from .musicbrainz import MusicBrainzResolver
-from .spotify_client import make_spotify_client
+from .spotify_client import get_user_playlists, make_spotify_client
 from .state import load_state, save_state
 from .sync import sync_playlist
 from .track_cache import TrackCache
@@ -56,10 +56,24 @@ def run_sync(
     valid_ids = {item["Id"] for item in (jf._library_cache or [])}
     track_cache.validate(valid_ids)
 
-    all_playlists = cfg.get("playlists", [])
-    if not all_playlists:
-        log.error("No playlists defined in config.json")
-        raise RuntimeError("No playlists defined in config.json")
+    from .web.settings import get_setting
+    sync_all = get_setting("SYNC_ALL_PLAYLISTS", "").strip().lower() in ("1", "true", "yes", "on")
+
+    if sync_all:
+        log.info("SYNC_ALL_PLAYLISTS enabled — discovering all account playlists")
+        all_playlists = get_user_playlists(sp)
+        if not all_playlists:
+            log.error("SYNC_ALL_PLAYLISTS is on but no playlists were discovered "
+                      "(is Spotify connected via PKCE?)")
+            raise RuntimeError(
+                "SYNC_ALL_PLAYLISTS is enabled but no Spotify playlists were found. "
+                "Connect Spotify in Settings."
+            )
+    else:
+        all_playlists = cfg.get("playlists", [])
+        if not all_playlists:
+            log.error("No playlists defined in config.json")
+            raise RuntimeError("No playlists defined in config.json")
 
     playlists = (
         [p for p in all_playlists if p.get("spotify_playlist_id") in playlist_ids]

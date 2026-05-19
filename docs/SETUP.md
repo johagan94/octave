@@ -1,6 +1,6 @@
 # Setup Guide
 
-Step-by-step instructions for getting `spotify_sync` running from scratch.
+Step-by-step instructions for getting `octave` running from scratch.
 
 ---
 
@@ -37,7 +37,7 @@ use the Spotify Web API in a meaningful way).
 ### API key
 
 1. In Jellyfin, go to **Dashboard → API Keys** (Administration section).
-2. Click **+** to create a new key. Name it `spotify_sync`.
+2. Click **+** to create a new key. Name it `octave`.
 3. Copy the generated key — it is only shown once.
 
 ### User ID

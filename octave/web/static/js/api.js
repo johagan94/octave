@@ -1,7 +1,7 @@
 // fetch wrapper. Always reads localStorage.api_key, unwraps the {data, error}
 // envelope, throws a typed-ish error on non-2xx. Single source of HTTP truth.
 
-const API_KEY_STORAGE = "spotify_sync_api_key";
+const API_KEY_STORAGE = "octave_api_key";
 
 export function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE) || "";

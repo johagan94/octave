@@ -82,7 +82,7 @@ def test_rebuild_when_playlist_doesnt_exist_yet() -> None:
 
 
 def test_pydantic_accepts_rebuild_mode() -> None:
-    from spotify_sync.web.models import PlaylistEntry
+    from octave.web.models import PlaylistEntry
 
     entry = PlaylistEntry(
         spotify_playlist_id="abc",
@@ -102,7 +102,7 @@ def test_pydantic_accepts_rebuild_mode() -> None:
 
 
 def test_jellyfin_client_has_delete_playlist() -> None:
-    from spotify_sync.jellyfin_client import JellyfinClient
+    from octave.jellyfin_client import JellyfinClient
 
     assert hasattr(JellyfinClient, "delete_playlist"), \
         "JellyfinClient.delete_playlist not defined"

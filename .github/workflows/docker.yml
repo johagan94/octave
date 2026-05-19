@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}   # e.g. ghcr.io/jack/spotify_sync
+  IMAGE_NAME: ${{ github.repository }}   # e.g. ghcr.io/jackohagan94-afk/octave
 
 jobs:
   build:

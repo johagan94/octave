@@ -1,9 +1,9 @@
 """FastAPI application factory.
 
 Two routers:
-  • ``public_router`` (no auth) — only ``/api/health`` so the Docker
+  - ``public_router`` (no auth) -- only ``/api/health`` so the Docker
     healthcheck and external monitors work without a key.
-  • ``api_router`` (optional X-API-Key auth) — everything else.
+  - ``api_router`` (optional X-API-Key auth) -- everything else.
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ from .models import ApiError, ApiResponse
 from .routes import config as config_route
 from .routes import health, logs, playlists, setup
 from .routes import sync as sync_route
+from .routes import settings as settings_route
+from .routes import spotify_auth as spotify_auth_route
 from .runner import runner
 
 log = logging.getLogger(__name__)
@@ -42,14 +44,14 @@ def _make_scheduler(cron: str):
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from apscheduler.triggers.cron import CronTrigger
     except ImportError:
-        log.warning("[web] apscheduler not installed — scheduled sync disabled")
+        log.warning("[web] apscheduler not installed -- scheduled sync disabled")
         return None
 
     tz = os.environ.get("TZ", "UTC")
     scheduler = AsyncIOScheduler(timezone=tz)
 
     async def _scheduled_sync():
-        log.info("[scheduler] cron fired — triggering sync")
+        log.info("[scheduler] cron fired -- triggering sync")
         try:
             await runner.trigger("all")
         except HTTPException as exc:
@@ -57,13 +59,12 @@ def _make_scheduler(cron: str):
         except Exception:
             log.exception("[scheduler] sync failed to start")
         finally:
-            # Refresh next_run_at after every execution
             _update_next_run(scheduler, cron)
 
     try:
         trigger = CronTrigger.from_crontab(cron, timezone=tz)
     except Exception as exc:
-        log.error("[web] invalid SYNC_SCHEDULE %r: %s — scheduler disabled", cron, exc)
+        log.error("[web] invalid SYNC_SCHEDULE %r: %s -- scheduler disabled", cron, exc)
         return None
 
     scheduler.add_job(_scheduled_sync, trigger, id="main_sync", replace_existing=True)
@@ -89,7 +90,6 @@ async def lifespan(app: FastAPI):
     log.info("[web] startup complete; api_key_required=%s",
              bool(os.environ.get("API_KEY", "").strip()))
 
-    # ── APScheduler ───────────────────────────────────────────────────
     cron = os.environ.get("SYNC_SCHEDULE", "").strip() or _DEFAULT_CRON
     scheduler = _make_scheduler(cron)
     if scheduler is not None:
@@ -99,9 +99,8 @@ async def lifespan(app: FastAPI):
     else:
         log.info("[web] scheduled sync disabled (no valid SYNC_SCHEDULE or apscheduler missing)")
 
-    # ── Optional startup sync ─────────────────────────────────────────
     if os.environ.get("SYNC_ON_STARTUP", "").lower() == "true":
-        log.info("[web] SYNC_ON_STARTUP=true — kicking off initial sync")
+        log.info("[web] SYNC_ON_STARTUP=true -- kicking off initial sync")
         try:
             await runner.trigger("all")
         except HTTPException as exc:
@@ -120,14 +119,13 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Octave",
         version="3.0.0",
-        description="Spotify → Jellyfin + Lidarr sync. ListenBrainz & Last.fm enrichment.",
+        description="Spotify to Jellyfin + Lidarr sync. ListenBrainz and Last.fm enrichment.",
         lifespan=lifespan,
         docs_url="/api/docs",
         redoc_url=None,
         openapi_url="/api/openapi.json",
     )
 
-    # Standardise HTTPException output into the ApiResponse envelope.
     @app.exception_handler(HTTPException)
     async def _http_exc_handler(_request: Request, exc: HTTPException):
         body = ApiResponse(
@@ -145,25 +143,27 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=500,
                             content=body.model_dump(exclude_none=True))
 
-    # /api/health — no auth, used by Docker healthcheck
+    # /api/health -- no auth, used by Docker healthcheck
     public_router = APIRouter(prefix="/api")
     public_router.include_router(health.router)
     app.include_router(public_router)
 
-    # All other /api/* routes — gated by optional X-API-Key
+    # All other /api/* routes -- gated by optional X-API-Key
     api_router = APIRouter(prefix="/api", dependencies=[Depends(require_api_key)])
     api_router.include_router(setup.router)
     api_router.include_router(sync_route.router)
     api_router.include_router(logs.router)
     api_router.include_router(config_route.router)
     api_router.include_router(playlists.router)
+    api_router.include_router(settings_route.router)
+    api_router.include_router(spotify_auth_route.router)
     app.include_router(api_router)
 
-    # Frontend SPA — serve index.html + JS + CSS at /
+    # Frontend SPA -- serve index.html + JS + CSS at /
     static_dir = Path(__file__).parent / "static"
     if static_dir.is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
     else:
-        log.warning("[web] static dir not found at %s — UI will 404", static_dir)
+        log.warning("[web] static dir not found at %s -- UI will 404", static_dir)
 
     return app

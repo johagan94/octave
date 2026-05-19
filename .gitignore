@@ -1,8 +1,11 @@
-# Credentials â€” never commit these
+# Credentials — never commit these
 .env
 
 # User's actual config (commit config.example.json instead)
 config.json
+
+# UI-managed persistent settings (credentials saved from UI)
+settings.json
 
 # Windows alternate-data-stream artifacts
 *:Zone.Identifier

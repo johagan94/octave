@@ -11,13 +11,13 @@ def configure_logging(log_path: Path | None = None) -> None:
     """Configure root logger with stdout + optional file handler.
 
     Honors ``LOG_LEVEL`` env var (default INFO) and ``LOG_FILE`` env var
-    (default ``spotify_sync.log`` in the current working dir).
+    (default ``octave.log`` in the current working dir).
     """
     level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
 
     if log_path is None:
-        log_path = Path(os.environ.get("LOG_FILE", "spotify_sync.log"))
+        log_path = Path(os.environ.get("LOG_FILE", "octave.log"))
 
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
     try:

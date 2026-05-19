@@ -39,7 +39,7 @@ missing; optional vars have sensible defaults.
 | `SYNC_CONFIG` | `/app/config/config.json` | Main config file (playlists list, match thresholds) |
 | `SYNC_STATE` | `/app/data/sync_state.json` | Lidarr request state machine persistence |
 | `SPOTIFY_TOKEN_CACHE` | `/app/data/.spotify_token_cache` | Spotify refresh token (treat as a secret) |
-| `LOG_FILE` | `/app/logs/spotify_sync.log` | Rotated by the host or a sidecar — the app does not rotate |
+| `LOG_FILE` | `/app/logs/octave.log` | Rotated by the host or a sidecar — the app does not rotate |
 | `LOG_LEVEL` | `INFO` | `DEBUG` for matching diagnostics |
 | `TZ` | `UTC` | Container timezone — affects timestamps in logs and the cron scheduler. Use an IANA name, e.g. `Australia/Sydney`. |
 

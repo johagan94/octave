@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Octave</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="/app.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='2' width='2' height='12' rx='0.5' fill='%231db954'/%3E%3Crect x='4' y='4' width='2' height='10' rx='0.5' fill='%231db954'/%3E%3Crect x='7' y='1' width='2' height='13' rx='0.5' fill='%231db954'/%3E%3Crect x='10' y='5' width='2' height='9' rx='0.5' fill='%231db954'/%3E%3Crect x='13' y='3' width='2' height='11' rx='0.5' fill='%231db954'/%3E%3C/svg%3E">
 </head>
@@ -19,10 +22,11 @@
     <a href="#/missing" data-route="missing">Missing</a>
     <a href="#/logs" data-route="logs">Logs</a>
     <a href="#/config" data-route="config">Config</a>
+    <a href="#/settings" data-route="settings">Settings</a>
     <a href="#/setup" data-route="setup">Setup</a>
   </nav>
   <div class="header-actions">
-    <button id="api-key-btn" title="Set API key" class="icon-btn">🔑</button>
+    <button id="api-key-btn" title="Set API key" class="icon-btn">&#128273;</button>
   </div>
 </header>
 
@@ -31,7 +35,7 @@
 <dialog id="api-key-dialog">
   <form method="dialog">
     <h3>API key</h3>
-    <p>Required if the server has <code>API_KEY</code> set. Stored in browser localStorage only — never sent to anything except this server.</p>
+    <p>Required if the server has <code>API_KEY</code> set. Stored in browser localStorage only � never sent to anything except this server.</p>
     <input id="api-key-input" type="password" placeholder="leave blank if no auth" autocomplete="off">
     <menu>
       <button value="cancel">Cancel</button>

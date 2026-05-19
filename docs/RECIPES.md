@@ -7,7 +7,7 @@ Copy-paste docker-compose snippets for common homelab setups.
 ## Jellyfin and Lidarr on the same Docker host (different network)
 
 The most common homelab setup: Jellyfin and Lidarr are on a `homelab` network,
-`spotify_sync` creates its own `spotify_sync_default` network.
+`octave` creates its own `octave_default` network.
 
 Use the Docker host's **gateway IP** on the `homelab` network — typically
 `172.18.0.1`, but check with:
@@ -31,7 +31,7 @@ No changes to `docker-compose.yml` needed.
 Join all three containers to the same network so they can reach each other
 by service name.
 
-**docker-compose.yml** (spotify_sync side):
+**docker-compose.yml** (octave side):
 ```yaml
 services:
   spotify-sync:
@@ -89,7 +89,7 @@ SYNC_MODE=oneshot
 
 Cron entry on the host (runs at 02:00 daily):
 ```cron
-0 2 * * * cd /home/jack/spotify_sync && docker compose run --rm spotify-sync
+0 2 * * * cd /home/jack/octave && docker compose run --rm spotify-sync
 ```
 
 ---
@@ -215,5 +215,5 @@ Disable after diagnosing — DEBUG mode is chatty (~10× the log volume).
 | `./config/config.json` | `/app/config/config.json` | Playlist list + match thresholds. Editable from the UI. |
 | `./data/.spotify_token_cache` | `/app/data/.spotify_token_cache` | OAuth refresh token. Keep secret. chmod 600 by entrypoint. |
 | `./data/sync_state.json` | `/app/data/sync_state.json` | Lidarr request state machine. Don't delete unless resetting. |
-| `./data/spotify_sync.db` | `/app/data/spotify_sync.db` | SQLite run history. Safe to delete to reset history. |
-| `./logs/spotify_sync.log` | `/app/logs/spotify_sync.log` | Application log. Rotated by the host or a logrotate sidecar. |
+| `./data/octave.db` | `/app/data/octave.db` | SQLite run history. Safe to delete to reset history. |
+| `./logs/octave.log` | `/app/logs/octave.log` | Application log. Rotated by the host or a logrotate sidecar. |

@@ -57,21 +57,31 @@ def _enrich_playlist(entry: dict) -> PlaylistEntry:
                 with cfg_path.open() as fh:
                     sp_cfg = json.load(fh).get("spotify", {})
 
-            client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
-            client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
-            redirect = os.environ.get("SPOTIFY_REDIRECT_URI", "http://localhost:8888/callback")
-            token_path = os.environ.get("SPOTIFY_TOKEN_CACHE", ".spotify_token_cache")
+            sp = None
 
-            if client_id and client_secret and Path(token_path).exists():
-                auth = SpotifyOAuth(
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    redirect_uri=redirect,
-                    scope="playlist-read-private playlist-read-collaborative",
-                    cache_path=token_path,
-                    open_browser=False,
-                )
-                sp = spotipy.Spotify(auth_manager=auth)
+            # Preferred: PKCE token (no client secret needed)
+            from ...spotify_auth import get_valid_access_token
+            pkce_token = get_valid_access_token()
+            if pkce_token:
+                sp = spotipy.Spotify(auth=pkce_token)
+            else:
+                # Legacy Authorization Code flow (client_secret present)
+                client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
+                client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+                redirect = os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8888/callback")
+                token_path = os.environ.get("SPOTIFY_TOKEN_CACHE", ".spotify_token_cache")
+                if client_id and client_secret and Path(token_path).exists():
+                    auth = SpotifyOAuth(
+                        client_id=client_id,
+                        client_secret=client_secret,
+                        redirect_uri=redirect,
+                        scope="playlist-read-private playlist-read-collaborative",
+                        cache_path=token_path,
+                        open_browser=False,
+                    )
+                    sp = spotipy.Spotify(auth_manager=auth)
+
+            if sp is not None:
                 meta = get_playlist_metadata(sp, spotify_id)
                 _cover_cache[spotify_id] = meta.get("cover_url")
                 result.cover_url = meta.get("cover_url")

@@ -1,6 +1,6 @@
 # Architecture
 
-How `spotify_sync` is structured and why.
+How `octave` is structured and why.
 
 ---
 
@@ -36,9 +36,9 @@ a sync because the blocking sync work is dispatched via `asyncio.to_thread`.
 ## Package layout
 
 ```
-spotify_sync/                   importable package
+octave/                   importable package
 ├── __init__.py                 __version__ = "2.0.0"
-├── __main__.py                 CLI entry: python -m spotify_sync
+├── __main__.py                 CLI entry: python -m octave
 │                               Exports run_sync(progress_cb, playlist_ids) → dict
 ├── config.py                   load_config() — reads SYNC_CONFIG env var
 ├── state.py                    load_state(), save_state() — Lidarr state machine
@@ -53,7 +53,7 @@ spotify_sync/                   importable package
 ├── sync.py                     sync_playlist() — orchestrates one playlist
 │                               request_album_in_lidarr() — state machine
 └── web/                        FastAPI layer (web-mode only)
-    ├── __main__.py             uvicorn entry: python -m spotify_sync.web
+    ├── __main__.py             uvicorn entry: python -m octave.web
     ├── app.py                  create_app() factory, lifespan, scheduler wiring
     ├── models.py               Pydantic v2 contracts (locked — see below)
     ├── envelope.py             ok(data), err(code, msg, status) helpers

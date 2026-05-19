@@ -277,18 +277,26 @@ class JellyfinClient:
         Returns True on success, False on failure (graceful degradation).
         """
         try:
-            # Ensure JPEG — Jellyfin may reject other formats
-            if len(image_bytes) > 100 and b"JFIF" not in image_bytes[:100] and b"Exif" not in image_bytes[:100] and b"PNG" not in image_bytes[:10]:
-                try:
-                    from PIL import Image
-                    from io import BytesIO
-                    img = Image.open(BytesIO(image_bytes))
-                    img = img.convert("RGB")
-                    buf = BytesIO()
-                    img.save(buf, format="JPEG", quality=85)
-                    image_bytes = buf.getvalue()
-                except ImportError:
-                    pass  # Pillow not installed; send as-is
+            # Normalise to JPEG (Spotify covers are usually JPEG, but may be
+            # PNG/WebP). Best-effort if Pillow is available.
+            try:
+                from io import BytesIO
+
+                from PIL import Image
+                img = Image.open(BytesIO(image_bytes)).convert("RGB")
+                buf = BytesIO()
+                img.save(buf, format="JPEG", quality=90)
+                image_bytes = buf.getvalue()
+            except ImportError:
+                pass  # Pillow not installed; send original bytes
+            except Exception as conv_exc:
+                log.debug("  Cover convert skipped (%s); sending original", conv_exc)
+
+            # Jellyfin's POST /Items/{id}/Images/{type} expects the body to
+            # be the image BASE64-ENCODED as text — sending raw binary
+            # returns HTTP 500 "Error processing request".
+            import base64
+            b64 = base64.b64encode(image_bytes)
 
             r = requests.post(
                 f"{self.base}/Items/{playlist_id}/Images/Primary",
@@ -296,7 +304,7 @@ class JellyfinClient:
                     "X-Emby-Authorization": self.headers["X-Emby-Authorization"],
                     "Content-Type": "image/jpeg",
                 },
-                data=image_bytes,
+                data=b64,
                 timeout=30,
             )
             if r.status_code in (200, 204):

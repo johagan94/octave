@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 def _log_path() -> Path:
-    return Path(os.environ.get("LOG_FILE", "spotify_sync.log"))
+    return Path(os.environ.get("LOG_FILE", "octave.log"))
 
 
 @router.get("/logs")

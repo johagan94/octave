@@ -40,13 +40,13 @@ function discoveryStep(name, intg, description) {
 
 function spotifyStep(intg) {
   if (!intg.configured) {
-    return step("Spotify credentials", "todo",
+    return step("Connect Spotify", "todo",
       h("div",
-        h("p", "Set ", h("code", "SPOTIFY_CLIENT_ID"), " and ", h("code", "SPOTIFY_CLIENT_SECRET"), " in your ", h("code", ".env"), "."),
+        h("p", "Go to ", h("strong", "Settings → Spotify"), " and click ", h("strong", "Connect Spotify"), ". No developer account needed — it uses the bundled app with PKCE OAuth."),
         h("p", h("small", { style: { color: "var(--text-dim)" } },
-          "Create a Spotify app at ",
+          "Advanced: to use your own Spotify app, create one at ",
           h("a", { href: "https://developer.spotify.com/dashboard", target: "_blank" }, "developer.spotify.com/dashboard"),
-          ". Add ", h("code", "http://127.0.0.1:8888/callback"), " to its Redirect URIs."),
+          ", add ", h("code", "http://127.0.0.1:8888/callback"), " to its Redirect URIs, and set your Client ID in Settings."),
         ),
       ),
     );

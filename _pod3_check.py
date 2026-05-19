@@ -14,11 +14,11 @@ import tempfile
 from pathlib import Path
 
 # Isolate paths so the smoke test never touches real config / state / db
-_TMP = Path(tempfile.mkdtemp(prefix="spotify_sync_pod3_"))
+_TMP = Path(tempfile.mkdtemp(prefix="octave_pod3_"))
 os.environ["SYNC_CONFIG"] = str(_TMP / "config.json")
 os.environ["SYNC_STATE"] = str(_TMP / "sync_state.json")
-os.environ["SYNC_DB"] = str(_TMP / "spotify_sync.db")
-os.environ["LOG_FILE"] = str(_TMP / "spotify_sync.log")
+os.environ["SYNC_DB"] = str(_TMP / "octave.db")
+os.environ["LOG_FILE"] = str(_TMP / "octave.log")
 os.environ["SPOTIFY_TOKEN_CACHE"] = str(_TMP / ".spotify_token_cache")
 os.environ.setdefault("API_KEY", "")  # auth disabled for the test
 
@@ -36,7 +36,7 @@ os.environ.setdefault("API_KEY", "")  # auth disabled for the test
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from spotify_sync.web.app import create_app  # noqa: E402
+from octave.web.app import create_app  # noqa: E402
 
 
 def assert_envelope_ok(payload: dict) -> dict:

@@ -47,7 +47,7 @@ If the problem persists after upgrading, it means the old version wrote a
 stuck "running" row before the fix was in place. Fix it manually:
 
 ```bash
-docker compose exec spotify-sync sqlite3 /app/data/spotify_sync.db \
+docker compose exec spotify-sync sqlite3 /app/data/octave.db \
   "UPDATE sync_runs SET status='error', finished_at=datetime('now'), \
    error='interrupted' WHERE status='running';"
 make restart
@@ -123,7 +123,7 @@ browser. Common mistakes:
 
 To find your gateway IP:
 ```bash
-docker network inspect spotify_sync_default | grep Gateway
+docker network inspect octave_default | grep Gateway
 ```
 
 See [RECIPES.md](RECIPES.md) for worked examples.

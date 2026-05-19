@@ -51,7 +51,7 @@ COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 
 # Application source
-COPY --chown=app:app spotify_sync/ /app/spotify_sync/
+COPY --chown=app:app octave/ /app/octave/
 COPY --chown=app:app config.example.json /app/config.example.json
 COPY --chown=app:app entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh \

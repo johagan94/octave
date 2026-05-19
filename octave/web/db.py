@@ -57,7 +57,7 @@ _LOCK = threading.Lock()
 
 
 def db_path() -> Path:
-    return Path(os.environ.get("SYNC_DB", "/app/data/spotify_sync.db"))
+    return Path(os.environ.get("SYNC_DB", "/app/data/octave.db"))
 
 
 def _connect() -> sqlite3.Connection:

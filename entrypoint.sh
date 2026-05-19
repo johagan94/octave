@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container entrypoint for spotify_sync.
+# Container entrypoint for octave.
 #
 # Modes (selected via $SYNC_MODE):
 #   web      → run the FastAPI web server (default; recommended)
@@ -8,7 +8,7 @@
 # Volume mounts expected:
 #   /app/config  → user-editable config.json (and per-concern files later)
 #   /app/data    → sync_state.json, .spotify_token_cache, run history DB
-#   /app/logs    → spotify_sync.log (rotated by the host or a sidecar)
+#   /app/logs    → octave.log (rotated by the host or a sidecar)
 #
 # All paths inside the package are env-overridable so we don't hard-code them.
 set -euo pipefail
@@ -48,11 +48,11 @@ echo "[entrypoint] mode=$MODE  config=$SYNC_CONFIG  state=$SYNC_STATE  log=$LOG_
 
 case "$MODE" in
     oneshot)
-        exec python -m spotify_sync
+        exec python -m octave
         ;;
     web)
         # SYNC_ON_STARTUP is honored by the web app itself, not the entrypoint.
-        exec python -m spotify_sync.web
+        exec python -m octave.web
         ;;
     *)
         echo "[entrypoint] Unknown SYNC_MODE='$MODE'. Valid: web, oneshot" >&2

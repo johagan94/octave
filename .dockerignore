@@ -29,6 +29,9 @@ sync_state.json
 spotify_sync.log
 *.log
 
+# UI-managed persistent settings
+settings.json
+
 # Backups / archives
 spotify_sync.legacy.py
 files

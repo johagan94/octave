@@ -6,24 +6,45 @@ services:
     ports:
       - "8000:8000"
       - "8888:8888"
+    # Join the shared homelab network so service-name URLs like
+    # http://jellyfin:8096 / http://lidarr:8686 resolve. Without this,
+    # compose puts octave on an isolated default network and all
+    # service-name integrations fail with connection timeouts.
+    networks:
+      - homelab
     volumes:
       - ./config:/app/config:rw
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
     environment:
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      # Credentials � all optional now; can be configured via UI Settings page.
+      # Env vars take priority over saved settings.
+      # Public Client ID bundled so end users need NO Spotify dev account.
+      # PKCE = no secret to protect. Set this once (project maintainer) to a
+      # registered app whose redirect URI is http://127.0.0.1:8888/callback.
+      - OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID=${OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID:-}
+      # Optional per-user overrides (advanced; not needed for normal use):
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
       - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI:-http://127.0.0.1:8888/callback}
-      - JELLYFIN_URL=${JELLYFIN_URL}
-      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
-      - JELLYFIN_USER_ID=${JELLYFIN_USER_ID}
-      - LIDARR_URL=${LIDARR_URL}
-      - LIDARR_API_KEY=${LIDARR_API_KEY}
+      - JELLYFIN_URL=${JELLYFIN_URL:-}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
+      - JELLYFIN_USER_ID=${JELLYFIN_USER_ID:-}
+      - LIDARR_URL=${LIDARR_URL:-}
+      - LIDARR_API_KEY=${LIDARR_API_KEY:-}
       - SYNC_MODE=${SYNC_MODE:-web}
       - SYNC_ON_STARTUP=${SYNC_ON_STARTUP:-false}
+      # Empty default (not "false") so the UI/settings.json value can take
+      # effect — get_setting() gives env vars priority, a literal "false"
+      # here would permanently override the toggle.
+      - SYNC_ALL_PLAYLISTS=${SYNC_ALL_PLAYLISTS:-}
       - SYNC_SCHEDULE=${SYNC_SCHEDULE:-0 2 * * *}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - TZ=${TZ:-UTC}
       - API_KEY=${API_KEY:-}
       - LISTENBRAINZ_TOKEN=${LISTENBRAINZ_TOKEN:-}
       - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+
+networks:
+  homelab:
+    external: true
