@@ -1,12 +1,12 @@
 /* Octave — onyx dark theme */
 
 :root {
-  --bg: #09090b;
-  --panel: #121217;
-  --panel-2: #1a1a22;
-  --panel-3: #22222d;
-  --border: #272730;
-  --border-hover: #3a3a48;
+  --bg: #060608;
+  --panel: #0e0e13;
+  --panel-2: #15151d;
+  --panel-3: #1d1d28;
+  --border: #222230;
+  --border-hover: #35354a;
   --text: #e4e4ec;
   /* lightened from #717182 — old value failed contrast on --bg #09090b */
   --text-dim: #9b9bad;

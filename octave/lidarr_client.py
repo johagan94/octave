@@ -1,6 +1,7 @@
 """Lidarr client: artist/album lookup, add, monitor, search."""
 
 import logging
+import threading
 from typing import Optional
 
 import requests
@@ -26,6 +27,10 @@ class LidarrClient:
         # Per-run cache: lowercase artist name → resolved Lidarr artist or None.
         # Sentinel ``...`` distinguishes "not yet looked up" from "looked up, no match".
         self._run_artist_cache: dict[str, Optional[dict]] = {}
+        # Per-artist locks: prevents parallel threads from double-adding the same artist
+        # when multiple missing albums from the same artist are processed concurrently.
+        self._run_artist_lock_guard: threading.Lock = threading.Lock()
+        self._run_artist_locks: dict[str, threading.Lock] = {}
         # Track which artists have already logged failures this run
         self._logged_failures: set[str] = set()
 

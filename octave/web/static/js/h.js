@@ -54,13 +54,38 @@ export function fmtAge(iso) {
   return `${Math.round(sec / 86400)}d ago`;
 }
 
-/** Format an ISO datetime string as a human-readable local date+time. */
+/** Format an ISO datetime string as DD/MM/YYYY HH:MM (local time). */
 export function fmtDatetime(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d)) return "—";
-  return d.toLocaleString(undefined, {
-    month: "short", day: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+  const dd   = String(d.getDate()).padStart(2, "0");
+  const mm   = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh   = String(d.getHours()).padStart(2, "0");
+  const min  = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
+const _DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Convert a simple cron expression to a human-readable string.
+ *  Handles the most common homelab patterns; falls back to the raw string. */
+export function fmtCron(expr) {
+  if (!expr) return "";
+  const p = expr.trim().split(/\s+/);
+  if (p.length < 5) return expr;
+  const [min, hour, dom, month, dow] = p;
+  const hh  = hour.padStart(2, "0");
+  const mm  = min.padStart(2, "0");
+  const isEveryHour  = hour === "*";
+  const isEveryMin   = min  === "*";
+  const isDailyTime  = /^\d+$/.test(hour) && /^\d+$/.test(min);
+  const isEveryDay   = dom === "*" && month === "*" && dow === "*";
+  const isWeeklyDay  = dom === "*" && month === "*" && /^\d$/.test(dow);
+  if (isEveryDay && isDailyTime)                           return `daily at ${hh}:${mm}`;
+  if (isEveryDay && isEveryHour && isDailyTime)            return `every hour at :${mm}`;
+  if (isEveryDay && isEveryHour && isEveryMin)             return "every minute";
+  if (isWeeklyDay && isDailyTime)                          return `${_DAYS[+dow] ?? dow} at ${hh}:${mm}`;
+  return expr; // fallback: show raw cron
 }

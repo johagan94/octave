@@ -1,7 +1,8 @@
 // Playlist CRUD: table + add form + sync_mode selector + bulk edit + delete.
+// Also shows last-sync stats per playlist and respects SYNC_ALL_PLAYLISTS mode.
 
 import { api, ApiError } from "../api.js";
-import { h } from "../h.js";
+import { h, fmtAge } from "../h.js";
 import { toast } from "../toast.js";
 
 const SPOTIFY_ID_RE = /(?:open\.spotify\.com\/playlist\/|spotify:playlist:)([a-zA-Z0-9]+)/;
@@ -20,6 +21,8 @@ const SYNC_MODES = [
 
 let containerRef = null;
 let cache = [];
+let syncStats = {};   // spotify_id → {matched, missing, status, started_at}
+let syncAllActive = false;
 // Set of spotify_playlist_ids currently checked
 let selected = new Set();
 
@@ -27,10 +30,31 @@ let selected = new Set();
 
 async function refresh() {
   try {
-    const data = await api.get("/api/playlists");
-    cache = data.playlists || [];
-    // Drop any selected ids that no longer exist
+    const [playlistData, settingsData, historyData] = await Promise.all([
+      api.get("/api/playlists"),
+      api.get("/api/settings").catch(() => ({ settings: {} })),
+      api.get("/api/sync/history?limit=1").catch(() => ({ runs: [] })),
+    ]);
+
+    cache = playlistData.playlists || [];
     selected = new Set([...selected].filter(id => cache.some(p => p.spotify_playlist_id === id)));
+
+    // Check if SYNC_ALL_PLAYLISTS is on
+    const syncAllSetting = settingsData?.settings?.SYNC_ALL_PLAYLISTS;
+    syncAllActive = syncAllSetting?.value === "true";
+
+    // Load per-playlist sync stats from the most recent run
+    syncStats = {};
+    const runs = historyData?.runs || [];
+    if (runs.length > 0) {
+      try {
+        const detail = await api.get(`/api/sync/history/${runs[0].id}`);
+        for (const item of detail?.items || []) {
+          syncStats[item.spotify_id] = item;
+        }
+      } catch (_) { /* stats are cosmetic — ignore errors */ }
+    }
+
     render();
   } catch (e) {
     toast(`Load failed: ${e.message}`, "error");
@@ -71,6 +95,19 @@ async function onDelete(id, name) {
     refresh();
   } catch (e) {
     toast(`Delete failed: ${e.message}`, "error");
+  }
+}
+
+async function onSyncOne(id, name) {
+  try {
+    await api.post("/api/sync/all", { playlist_ids: [id] });
+    toast(`Sync started: ${name || id}`);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      toast("Sync already running", "warn");
+    } else {
+      toast(`Sync failed: ${e.message}`, "error");
+    }
   }
 }
 
@@ -137,7 +174,6 @@ function toggleSelect(id, checked) {
 function toggleSelectAll(checked) {
   if (checked) cache.forEach(p => selected.add(p.spotify_playlist_id));
   else selected.clear();
-  // Re-check all row checkboxes
   containerRef.querySelectorAll("input.row-check").forEach(cb => { cb.checked = checked; });
   updateBulkBar();
 }
@@ -160,9 +196,21 @@ function updateBulkBar() {
   }
 }
 
+function statBadge(stats) {
+  if (!stats) return h("span", { style: { color: "var(--text-dim)", fontSize: "11px" } }, "—");
+  const ok = stats.matched || 0;
+  const miss = stats.missing || 0;
+  return h("span", { style: { fontSize: "11px", display: "flex", gap: "6px", alignItems: "center" } },
+    h("span", { style: { color: "var(--ok)" } }, ok + " ✓"),
+    miss > 0 && h("span", { style: { color: "var(--warn)" } }, miss + " ✗"),
+    stats.started_at && h("span", { style: { color: "var(--text-dim)" } }, fmtAge(stats.started_at)),
+  );
+}
+
 function row(p) {
   const id = p.spotify_playlist_id;
   const isChecked = selected.has(id);
+  const stats = syncStats[id];
 
   const modeSelect = h("select", {
     onchange: (e) => onChangeMode(id, e.target.value),
@@ -188,14 +236,32 @@ function row(p) {
     h("td", p.jellyfin_playlist_name || h("em", { style: { color: "var(--text-dim)" } }, "(unnamed)")),
     h("td", h("span.id", id)),
     h("td", modeSelect),
+    h("td", statBadge(stats)),
     h("td", { style: { width: "1%", whiteSpace: "nowrap" } },
-      h("button.danger", { onclick: () => onDelete(id, p.jellyfin_playlist_name) }, "Remove"),
+      h("div", { style: { display: "flex", gap: "4px" } },
+        h("button", { onclick: () => onSyncOne(id, p.jellyfin_playlist_name), title: "Sync this playlist now" }, "↺"),
+        h("button.danger", { onclick: () => onDelete(id, p.jellyfin_playlist_name) }, "✕"),
+      ),
     ),
   );
 }
 
 function render() {
   containerRef.innerHTML = "";
+
+  // ── SYNC_ALL banner ───────────────────────────────────────────────
+  if (syncAllActive) {
+    containerRef.appendChild(h("div.card", { style: { borderColor: "var(--accent)", background: "var(--accent-glow)" } },
+      h("div.card-row",
+        h("strong", { style: { color: "var(--accent)" } }, "⚡ Auto-sync active"),
+        h("span.badge.ok", "SYNC_ALL_PLAYLISTS on"),
+      ),
+      h("p", { style: { color: "var(--text-dim)", marginTop: "8px", fontSize: "13px" } },
+        "All playlists from your Spotify account are synced automatically. " +
+        "The manual list below is ignored during sync — use it to configure sync modes per playlist " +
+        "or to add playlists before enabling auto-sync."),
+    ));
+  }
 
   // ── Add form ──────────────────────────────────────────────────────
   const form = h("form.card",
@@ -226,7 +292,6 @@ function render() {
   // ── Playlist table ────────────────────────────────────────────────
   const tableCard = h("div.card");
 
-  // Header row: title + bulk action bar
   const bulkModeSelect = h("select", { id: "bulk-mode-select", style: { width: "auto" } });
   for (const m of SYNC_MODES) bulkModeSelect.appendChild(h("option", { value: m.value }, m.value));
 
@@ -238,9 +303,7 @@ function render() {
     h("span", { style: { color: "var(--border)" } }, "|"),
     h("span", { style: { fontSize: "13px", color: "var(--text-dim)" } }, "Set mode:"),
     bulkModeSelect,
-    h("button", {
-      onclick: () => bulkChangeMode(bulkModeSelect.value),
-    }, "Apply"),
+    h("button", { onclick: () => bulkChangeMode(bulkModeSelect.value) }, "Apply"),
     h("span", { style: { color: "var(--border)" } }, "|"),
     h("button.danger", { onclick: bulkDelete }, "Remove selected"),
   );
@@ -269,13 +332,12 @@ function render() {
         h("th", "Name"),
         h("th", "Spotify ID"),
         h("th", "Sync mode"),
+        h("th", "Last sync"),
         h("th", ""),
       )),
       h("tbody", ...cache.map(row)),
     );
     tableCard.appendChild(tbl);
-
-    // Restore bulk bar visibility after re-render
     updateBulkBar();
   }
 

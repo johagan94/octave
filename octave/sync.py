@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import threading
 from collections import Counter
 from typing import Optional
 
@@ -94,55 +95,67 @@ def request_album_in_lidarr(
         return
 
     # ── Resolve / add the artist ──────────────────────────────────────────
+    # Use a per-artist lock so parallel threads (different albums, same artist)
+    # don't race to add the same artist to Lidarr simultaneously.
     artist_key = spotify_artist_name.lower()
-    lidarr_artist: Optional[dict] = lidarr._run_artist_cache.get(artist_key, ...)  # type: ignore[assignment]
+    with lidarr._run_artist_lock_guard:
+        if artist_key not in lidarr._run_artist_locks:
+            lidarr._run_artist_locks[artist_key] = threading.Lock()
+        _artist_lock = lidarr._run_artist_locks[artist_key]
 
-    if lidarr_artist is ...:
-        lidarr_artist = lidarr.find_artist_in_library(spotify_artist_name)
+    with _artist_lock:
+        # Double-checked: re-read cache inside the lock (another thread may
+        # have already resolved and cached this artist while we were waiting).
+        lidarr_artist: Optional[dict] = lidarr._run_artist_cache.get(artist_key, ...)  # type: ignore[assignment]
 
-        if lidarr_artist is None:
-            artist_info = None
-            artist_mbid = mb.get_artist_mbid(spotify_artist_id) if spotify_artist_id else None
+        if lidarr_artist is ...:
+            # Not yet resolved — look it up / add it now.
+            lidarr_artist = lidarr.find_artist_in_library(spotify_artist_name)
 
-            if artist_mbid:
-                artist_info = lidarr.lookup_artist_mbid(artist_mbid)
+            if lidarr_artist is None:
+                artist_info = None
+                artist_mbid = mb.get_artist_mbid(spotify_artist_id) if spotify_artist_id else None
 
-            if artist_info is None:
-                artist_info = lidarr.lookup_artist_by_name(spotify_artist_name)
+                if artist_mbid:
+                    artist_info = lidarr.lookup_artist_mbid(artist_mbid)
 
-            if artist_info is None:
-                lidarr._run_artist_cache[artist_key] = None
-                with _state_lock:
-                    requested[spotify_album_id] = {
-                        "status": "artist_not_found", "run": state["current_run"],
-                    }
-                save_state(state)
-                return
+                if artist_info is None:
+                    artist_info = lidarr.lookup_artist_by_name(spotify_artist_name)
 
-            try:
-                lidarr_artist = lidarr.add_artist(artist_info)
-                lidarr._artist_cache = None
-                lidarr.refresh_artist(lidarr_artist["id"])
-                log.info(
-                    "    Artist added (id=%d), refresh triggered — "
-                    "albums will appear next run", lidarr_artist["id"],
-                )
-            except requests.HTTPError as exc:
-                dedup_key = f"add_fail:{spotify_artist_name}"
-                if dedup_key not in lidarr._logged_failures:
-                    log.error("    Add artist failed (%s): %s", spotify_artist_name, exc)
-                    lidarr._logged_failures.add(dedup_key)
-                else:
-                    log.debug("    Add artist failed (%s): %s", spotify_artist_name, exc)
-                lidarr._run_artist_cache[artist_key] = None
-                with _state_lock:
-                    requested[spotify_album_id] = {
-                        "status": "artist_add_failed", "run": state["current_run"],
-                    }
-                save_state(state)
-                return
+                if artist_info is None:
+                    lidarr._run_artist_cache[artist_key] = None
+                    with _state_lock:
+                        requested[spotify_album_id] = {
+                            "status": "artist_not_found", "run": state["current_run"],
+                        }
+                    save_state(state)
+                    return
 
-        lidarr._run_artist_cache[artist_key] = lidarr_artist
+                try:
+                    lidarr_artist = lidarr.add_artist(artist_info)
+                    lidarr._artist_cache = None
+                    lidarr.refresh_artist(lidarr_artist["id"])
+                    log.info(
+                        "    Artist added (id=%d), refresh triggered — "
+                        "albums will appear next run", lidarr_artist["id"],
+                    )
+                except requests.HTTPError as exc:
+                    dedup_key = f"add_fail:{spotify_artist_name}"
+                    if dedup_key not in lidarr._logged_failures:
+                        log.error("    Add artist failed (%s): %s", spotify_artist_name, exc)
+                        lidarr._logged_failures.add(dedup_key)
+                    else:
+                        log.debug("    Add artist failed (%s): %s", spotify_artist_name, exc)
+                    lidarr._run_artist_cache[artist_key] = None
+                    with _state_lock:
+                        requested[spotify_album_id] = {
+                            "status": "artist_add_failed", "run": state["current_run"],
+                        }
+                    save_state(state)
+                    return
+
+            lidarr._run_artist_cache[artist_key] = lidarr_artist
+        # else: already cached (by this or another thread) — use it as-is
 
     if lidarr_artist is None:
         if entry.get("run") != state["current_run"]:

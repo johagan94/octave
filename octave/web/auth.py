@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 
 
 def _get_api_key() -> str:
@@ -28,9 +28,16 @@ def _get_api_key() -> str:
         return ""
 
 
-def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+def require_api_key(
+    request: Request,
+    x_api_key: str | None = Header(default=None),
+) -> None:
     expected = _get_api_key()
     if not expected:
         return  # auth disabled
-    if x_api_key != expected:
+    # Accept key from header OR ?api_key= query param.
+    # The query-param path is needed for EventSource (SSE) because browsers
+    # cannot set custom headers on EventSource connections.
+    provided = x_api_key or request.query_params.get("api_key")
+    if provided != expected:
         raise HTTPException(status_code=401, detail="invalid_api_key")

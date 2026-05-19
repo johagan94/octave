@@ -1,7 +1,7 @@
 // Dashboard: integration health, sync card with progress bar, playlist sync dropdown.
 
 import { api, ApiError } from "../api.js";
-import { h, fmtMs, fmtAge, fmtDatetime } from "../h.js";
+import { h, fmtMs, fmtAge, fmtDatetime, fmtCron } from "../h.js";
 import { toast } from "../toast.js";
 
 let pollTimer = 0;
@@ -95,11 +95,13 @@ function syncCard(run) {
       h("div.stat", h("span.num", String(run.waiting_lidarr || 0)),   h("span.label", "waiting lidarr")),
     ),
 
-    run.schedule_cron && h("div", { style: { marginTop: "12px", display: "flex", gap: "16px", alignItems: "center" } },
+    run.schedule_cron && h("div", { style: { marginTop: "12px", display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" } },
       h("small", { style: { color: "var(--text-dim)" } },
-        "⏰ schedule: ", h("code", run.schedule_cron)),
+        "⏰ ", h("strong", fmtCron(run.schedule_cron)),
+        h("code", { style: { marginLeft: "6px", fontSize: "11px", color: "var(--text-dim)" } }, run.schedule_cron),
+      ),
       run.next_run_at && h("small", { style: { color: "var(--text-dim)" } },
-        "next run: ", h("strong", fmtDatetime(run.next_run_at))),
+        "next: ", h("strong", fmtDatetime(run.next_run_at))),
     ),
   );
 }
@@ -133,21 +135,30 @@ async function triggerSync() {
 
 let setupCache = null;
 let runCache = null;
+// Diff keys — only re-render if data actually changed, preventing 30s flash
+let _setupKey = "";
+let _runKey = "";
 
 async function refreshSetup() {
   try {
-    setupCache = await api.get("/api/setup/status");
+    const data = await api.get("/api/setup/status");
+    const key = JSON.stringify(data);
+    if (key === _setupKey) return; // nothing changed
+    _setupKey = key;
+    setupCache = data;
     render();
   } catch (e) {
-    if (e.status === 401) {
-      toast("API key required", "error");
-    }
+    if (e.status === 401) toast("API key required", "error");
   }
 }
 
 async function refreshSync() {
   try {
-    runCache = await api.get("/api/sync/status");
+    const data = await api.get("/api/sync/status");
+    const key = JSON.stringify(data);
+    if (key === _runKey) return; // nothing changed
+    _runKey = key;
+    runCache = data;
     render();
   } catch (e) { /* ignore — next tick will retry */ }
 }
@@ -236,6 +247,10 @@ export default {
     ));
     containerRef = container.querySelector("#dashboard-content");
 
+    // Reset diff keys so first load always renders
+    _setupKey = "";
+    _runKey = "";
+
     // Load playlists for the sync dropdown
     try {
       const data = await api.get("/api/playlists");
@@ -245,7 +260,6 @@ export default {
     } catch (_) { /* non-fatal — dropdown will only show "All playlists" */ }
 
     await Promise.all([refreshSetup(), refreshSync()]);
-    render();
 
     // Poll sync status — fast while running, slow when idle
     const tick = async () => {
@@ -256,12 +270,14 @@ export default {
     };
     pollTimer = setTimeout(tick, 1500);
 
-    // Re-check setup every 30s
-    setupTimer = setInterval(refreshSetup, 30000);
+    // Re-check integrations every 60s (was 30s — pings are slow)
+    setupTimer = setInterval(refreshSetup, 60000);
   },
   unmount() {
     mounted = false;
     clearTimeout(pollTimer);
     clearInterval(setupTimer);
+    _setupKey = "";
+    _runKey = "";
   },
 };

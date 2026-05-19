@@ -6,6 +6,7 @@ import { h } from "../h.js";
 import { toast } from "../toast.js";
 
 let timer = 0;
+let lastKey = "";  // diff key — only rebuild DOM when data changes
 
 function step(title, status, body) {
   return h("div.setup-step" + (status === "done" ? ".done" : ""),
@@ -107,22 +108,11 @@ function lidarrStep(intg) {
   );
 }
 
-let containerRef = null;
-
-async function refresh() {
-  let status;
-  try {
-    status = await api.get("/api/setup/status");
-  } catch (e) {
-    containerRef.innerHTML = "";
-    containerRef.appendChild(h("div.card", h("h2", "Setup error"), h("pre", e.message)));
-    return;
-  }
-
+function buildDOM(status, containerRef) {
   containerRef.innerHTML = "";
   containerRef.appendChild(h("h2", "Setup"));
   containerRef.appendChild(h("p", { style: { color: "var(--text-dim)" } },
-    "Configure each integration. Changes take effect immediately — re-pings happen every 30s on this page."));
+    "Configure each integration. Pings run every 60s — or click Re-test now."));
 
   containerRef.appendChild(spotifyStep(status.spotify));
   containerRef.appendChild(jellyfinStep(status.jellyfin));
@@ -148,18 +138,42 @@ async function refresh() {
 
   containerRef.appendChild(h("div.card",
     h("h3", "Re-test"),
-    h("button", { onclick: refresh }, "Run pings now"),
+    h("button", { onclick: () => { lastKey = ""; refresh(); } }, "Run pings now"),
   ));
+}
+
+let containerRef = null;
+
+async function refresh() {
+  let status;
+  try {
+    status = await api.get("/api/setup/status");
+  } catch (e) {
+    // On error only show a card if we have nothing yet
+    if (!containerRef.querySelector("h2")) {
+      containerRef.innerHTML = "";
+      containerRef.appendChild(h("div.card", h("h2", "Setup error"), h("pre", e.message)));
+    }
+    return;
+  }
+
+  // Only rebuild the DOM if data actually changed — prevents flash every 60s
+  const key = JSON.stringify(status);
+  if (key === lastKey) return;
+  lastKey = key;
+  buildDOM(status, containerRef);
 }
 
 export default {
   async mount(container) {
     containerRef = container;
+    lastKey = "";
     container.appendChild(h("div.empty", "Loading…"));
     await refresh();
-    timer = setInterval(refresh, 30000);
+    timer = setInterval(refresh, 60000);
   },
   unmount() {
     clearInterval(timer);
+    lastKey = "";
   },
 };

@@ -1,7 +1,6 @@
 // Logs view: initial tail via /api/logs, then live SSE stream.
 
-import { api } from "../api.js";
-import { getApiKey } from "../api.js";
+import { api, getApiKey } from "../api.js";
 import { h } from "../h.js";
 import { toast } from "../toast.js";
 
@@ -28,17 +27,12 @@ function appendLine(text) {
 }
 
 function startStream() {
-  // EventSource doesn't support custom headers, so the API key (if any)
-  // travels as a query string. The auth dependency reads it from header
-  // OR query param? Actually it only reads from header. So if API_KEY is
-  // set, SSE won't auth. For now, log a warning; full fix is a server change.
   if (evtSource) evtSource.close();
 
-  const url = "/api/logs/stream";
-  if (getApiKey()) {
-    toast("Live tail unavailable when API_KEY is set (EventSource can't send headers).", "warn", 6000);
-    return;
-  }
+  // EventSource can't set custom headers, so pass the API key as a query
+  // param. The server's auth dependency accepts it from either location.
+  const key = getApiKey();
+  const url = "/api/logs/stream" + (key ? "?api_key=" + encodeURIComponent(key) : "");
 
   evtSource = new EventSource(url);
   evtSource.addEventListener("log", (e) => {
@@ -46,7 +40,7 @@ function startStream() {
     appendLine(e.data);
   });
   evtSource.onerror = () => {
-    // EventSource auto-reconnects; just let it.
+    // EventSource auto-reconnects; let it handle transient failures.
   };
 }
 
