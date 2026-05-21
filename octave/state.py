@@ -30,9 +30,13 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     path = state_path()
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
     with _state_lock:
-        with path.open("w") as fh:
+        with tmp_path.open("w") as fh:
             json.dump(state, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(str(tmp_path), str(path))
 
 
 def get_waiting_track_ids(state: dict) -> Set[str]:
