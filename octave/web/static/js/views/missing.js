@@ -67,15 +67,18 @@ function render() {
   if (!containerRef) return;
   containerRef.innerHTML = "";
 
-  var ids = Object.keys(cache);
-  if (!ids.length) {
-    containerRef.appendChild(h("div.empty", "No missing tracks. Run a sync first!"));
-    return;
-  }
-
   containerRef.appendChild(h("h2", "Missing Tracks"));
   containerRef.appendChild(h("p", { style: { color: "var(--text-dim)" } },
     "Tracks found in Spotify but not matched in Jellyfin. Use Lidarr to request missing albums."));
+
+  var ids = Object.keys(cache);
+  if (!ids.length) {
+    containerRef.appendChild(h("div.empty",
+      h("strong", "No missing tracks"),
+      h("span", "Run a sync to populate this view, or enjoy the rare quiet moment if everything is already matched."),
+    ));
+    return;
+  }
 
   for (var i = 0; i < ids.length; i++) {
     containerRef.appendChild(playlistCard(ids[i], cache[ids[i]]));
@@ -85,7 +88,10 @@ function render() {
 export default {
   async mount(container) {
     containerRef = container;
-    container.appendChild(h("div.empty", "Loading..."));
+    container.appendChild(h("div.empty",
+      h("strong", "Loading missing tracks"),
+      h("span", "Checking the latest sync results..."),
+    ));
     await refresh();
   },
   unmount() {},

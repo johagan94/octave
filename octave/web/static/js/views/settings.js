@@ -14,7 +14,7 @@ const SECTIONS = [
     title: "Spotify",
     statusId: "spotify-status",
     description: "Click 'Connect Spotify' and log in — no developer account needed. Uses PKCE OAuth (no client secret).",
-    help: "Leave Client ID blank to use the bundled app. Note: the OAuth callback uses http://127.0.0.1:8888 — open this Settings page from the same machine the container runs on (or SSH-forward port 8888) so the redirect can reach it. Advanced: to use your own Spotify app, create one at developer.spotify.com/dashboard, add redirect URI http://127.0.0.1:8888/callback, and paste its Client ID here. Client Secret is only for legacy (non-PKCE) flows.",
+    help: "Leave Client ID blank to use the bundled app. With your own Spotify app, add the redirect URI shown after Connect Spotify (usually this Octave host on port 8888) in developer.spotify.com/dashboard. Client Secret is only for legacy (non-PKCE) flows.",
     fields: [
       { key: "SPOTIFY_CLIENT_ID", label: "Client ID (optional)", type: "text", required: false },
       { key: "SPOTIFY_CLIENT_SECRET", label: "Client Secret (optional)", type: "password", required: false },
