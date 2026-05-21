@@ -126,6 +126,12 @@ def save_settings(updates: dict) -> dict:
         tmp = path.with_suffix(".tmp")
         with tmp.open("w") as fh:
             json.dump(raw, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass  # best effort (e.g. Windows / odd filesystems)
         tmp.replace(path)
         log.info("settings saved to %s", path)
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import datetime
 import logging
 import sys
+from datetime import timezone
 from typing import Callable, Optional
 
 import os
@@ -38,7 +39,7 @@ def run_sync(
     """
     cfg = load_config()
     state = load_state()
-    state["current_run"] = datetime.datetime.utcnow().isoformat()
+    state["current_run"] = datetime.datetime.now(timezone.utc).isoformat()
 
     # Load track cache for faster matching across runs
     track_cache = TrackCache()

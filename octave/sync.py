@@ -56,13 +56,6 @@ def request_album_in_lidarr(
       already_monitored → done
       requested         → done
     """
-    requested = state["lidarr_requested_albums"]
-    entry = requested.get(spotify_album_id, {})
-    status = entry.get("status")
-
-    if status in ("already_monitored", "requested"):
-        return
-
     with _state_lock:
         requested = state["lidarr_requested_albums"]
         entry = requested.get(spotify_album_id, {})

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 from pathlib import Path
 from typing import List, Literal, Optional
@@ -110,14 +112,20 @@ def download_missing_csv(spotify_id: str):
     tracks = pl.get("tracks", [])
     if not tracks:
         return Response(content="No tracks", media_type="text/plain")
-    header = "spotify_id,title,artist,album,album_type,spotify_url\n"
-    rows = "\n".join(
-        f"{t.get('spotify_id','')},{t.get('title','')},{t.get('artist','')},"
-        f"{t.get('album','')},{t.get('album_type','')},{t.get('spotify_url','')}"
-        for t in tracks
-    )
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["spotify_id", "title", "artist", "album", "album_type", "spotify_url"])
+    for t in tracks:
+        writer.writerow([
+            t.get("spotify_id", ""),
+            t.get("title", ""),
+            t.get("artist", ""),
+            t.get("album", ""),
+            t.get("album_type", ""),
+            t.get("spotify_url", ""),
+        ])
     return Response(
-        content=header + rows,
+        content=buf.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=missing_{spotify_id}.csv"},
     )

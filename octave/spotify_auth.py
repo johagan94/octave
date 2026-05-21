@@ -100,6 +100,8 @@ def _save_token(token: dict) -> None:
         tmp = path.with_suffix(".tmp")
         with tmp.open("w") as f:
             json.dump(token, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
         try:
             os.chmod(tmp, 0o600)
         except OSError:
