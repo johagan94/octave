@@ -33,6 +33,7 @@ services:
       - LIDARR_URL=${LIDARR_URL:-}
       - LIDARR_API_KEY=${LIDARR_API_KEY:-}
       - SYNC_MODE=${SYNC_MODE:-web}
+      - SYNC_DATA_DIR=/app/data
       - SYNC_ON_STARTUP=${SYNC_ON_STARTUP:-false}
       # Empty default (not "false") so the UI/settings.json value can take
       # effect — get_setting() gives env vars priority, a literal "false"

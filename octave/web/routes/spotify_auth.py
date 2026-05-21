@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from ...spotify_auth import (
     DEFAULT_REDIRECT_URI,
@@ -31,8 +31,39 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/spotify")
 
 
+def _redirect_uri_for_request(request: Request) -> str:
+    """Return the redirect URI for the PKCE auth flow.
+
+    Priority:
+    1. Explicit SPOTIFY_REDIRECT_URI from settings (always honoured)
+    2. DEFAULT_REDIRECT_URI for bundled client (no custom app)
+    3. Constructed from request host (x-forwarded-host or URL hostname)
+    4. DEFAULT_REDIRECT_URI as last resort
+    """
+    configured = get_setting("SPOTIFY_REDIRECT_URI")
+    if configured:
+        return configured
+
+    custom_client = bool(get_setting("SPOTIFY_CLIENT_ID"))
+    if not custom_client:
+        return DEFAULT_REDIRECT_URI
+
+    forwarded_host = request.headers.get("x-forwarded-host", "").strip()
+    host = forwarded_host or (request.url.hostname or "")
+    if not host:
+        return DEFAULT_REDIRECT_URI
+    host = host.split(",", 1)[0].strip()
+    if ":" in host and not host.startswith("["):
+        host = host.rsplit(":", 1)[0]
+
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return DEFAULT_REDIRECT_URI
+
+    return f"http://{host}:8888/callback"
+
+
 @router.get("/auth-url")
-def spotify_auth_url():
+def spotify_auth_url(request: Request):
     """Start a PKCE auth flow. Returns the Spotify authorization URL."""
     client_id = resolve_client_id(get_setting("SPOTIFY_CLIENT_ID"))
     if not client_id:
@@ -41,7 +72,7 @@ def spotify_auth_url():
             detail="No Spotify Client ID available. Set one in Settings, "
                    "or ship a bundled OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID.",
         )
-    redirect_uri = get_setting("SPOTIFY_REDIRECT_URI") or DEFAULT_REDIRECT_URI
+    redirect_uri = _redirect_uri_for_request(request)
     port = int(urlparse(redirect_uri).port or 8888)
     if not ensure_callback_server(port):
         raise HTTPException(

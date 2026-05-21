@@ -131,7 +131,8 @@ def check_spotify() -> IntegrationStatus:
 
     if csec:
         return IntegrationStatus(
-            configured=True, reachable=True,
+            configured=True, reachable=False,
+            error="No user token. Open Settings -> Connect Spotify to authorize.",
             detail={"mode": "client_credentials", "note": "public playlists only"},
         )
 

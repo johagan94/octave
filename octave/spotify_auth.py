@@ -85,7 +85,7 @@ def has_bundled_client_id() -> bool:
 
 
 def _token_path() -> Path:
-    return Path(os.environ.get("SYNC_DATA_DIR", "/app/data")) / ".spotify_pkce_token"
+    return Path(os.environ.get("SPOTIFY_TOKEN_CACHE", "/app/data/.spotify_pkce_token"))
 
 
 def _save_token(token: dict) -> None:
@@ -263,6 +263,7 @@ def revoke_token() -> None:
 class _CallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         parsed = urlparse(self.path)
+        log.info("Spotify PKCE callback received: %s (from %s)", self.path, self.client_address[0])
         if parsed.path != "/callback":
             self.send_response(404)
             self.end_headers()

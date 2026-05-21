@@ -17,7 +17,7 @@ from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 
 log = logging.getLogger(__name__)
 
-SPOTIFY_SCOPES = "playlist-read-private playlist-read-collaborative"
+SPOTIFY_SCOPES = "playlist-read-private playlist-read-collaborative user-library-read"
 
 
 def _token_cache_path() -> Path:

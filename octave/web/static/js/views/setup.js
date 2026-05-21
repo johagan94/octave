@@ -6,7 +6,7 @@ import { h } from "../h.js";
 import { toast } from "../toast.js";
 
 let timer = 0;
-let lastKey = "";  // diff key â€” only rebuild DOM when data changes
+let lastKey = "";  // diff key — only rebuild DOM when data changes
 
 function step(title, status, body) {
   return h("div.setup-step" + (status === "done" ? ".done" : ""),
@@ -43,7 +43,7 @@ function spotifyStep(intg) {
   if (!intg.configured) {
     return step("Connect Spotify", "todo",
       h("div",
-        h("p", "Go to ", h("strong", "Settings â†’ Spotify"), " and click ", h("strong", "Connect Spotify"), ". No developer account needed â€” it uses the bundled app with PKCE OAuth."),
+        h("p", "Go to ", h("strong", "Settings -> Spotify"), " and click ", h("strong", "Connect Spotify"), ". No developer account needed — it uses the bundled app with PKCE OAuth."),
         h("p", h("small", { style: { color: "var(--text-dim)" } },
           "Advanced: to use your own Spotify app, create one at ",
           h("a", { href: "https://developer.spotify.com/dashboard", target: "_blank" }, "developer.spotify.com/dashboard"),
@@ -52,6 +52,21 @@ function spotifyStep(intg) {
       ),
     );
   }
+
+  // Client credentials mode — public playlists only, no user token
+  if (intg.detail && intg.detail.mode === "client_credentials") {
+    return step("Spotify OAuth", "partial",
+      h("div",
+        h("p", "Client credentials active — ", h("strong", "public playlists only"), ". ",
+          "Go to ", h("strong", "Settings -> Spotify"), " and click ", h("strong", "Connect Spotify"), " to authorize with your account for full access."),
+        h("p", h("small", { style: { color: "var(--text-dim)" } },
+          "PKCE OAuth grants access to private playlists, saved tracks, and library. ",
+          "No developer account needed — uses the bundled Spotify app."),
+        ),
+      ),
+    );
+  }
+
   if (!intg.reachable) {
     return step("Spotify OAuth", "pending",
       h("div",
@@ -72,7 +87,7 @@ function jellyfinStep(intg) {
       h("div",
         h("p", "Set ", h("code", "JELLYFIN_URL"), ", ", h("code", "JELLYFIN_API_KEY"), " and ", h("code", "JELLYFIN_USER_ID"), " in ", h("code", ".env"), "."),
         h("p", h("small", { style: { color: "var(--text-dim)" } },
-          "API key: Jellyfin â†’ Dashboard â†’ API Keys. User ID: visible in the URL when you click your user.")),
+          "API key: Jellyfin -> Dashboard -> API Keys. User ID: visible in the URL when you click your user.")),
       ),
     );
   }
@@ -96,7 +111,7 @@ function jellyfinStep(intg) {
 function lidarrStep(intg) {
   if (!intg.configured) {
     return step("Lidarr", "todo",
-      h("p", "Set ", h("code", "LIDARR_URL"), " and ", h("code", "LIDARR_API_KEY"), " in ", h("code", ".env"), ". (Optional â€” disable Lidarr by leaving these unset, but missing albums won't be auto-requested.)"),
+      h("p", "Set ", h("code", "LIDARR_URL"), " and ", h("code", "LIDARR_API_KEY"), " in ", h("code", ".env"), ". (Optional — disable Lidarr by leaving these unset, but missing albums won't be auto-requested.)"),
     );
   }
   if (!intg.reachable) {
@@ -112,7 +127,7 @@ function buildDOM(status, containerRef) {
   containerRef.innerHTML = "";
   containerRef.appendChild(h("h2", "Setup"));
   containerRef.appendChild(h("p", { style: { color: "var(--text-dim)" } },
-    "Configure each integration. Pings run every 60s â€” or click Re-test now."));
+    "Configure each integration. Pings run every 60s — or click Re-test now."));
 
   containerRef.appendChild(spotifyStep(status.spotify));
   containerRef.appendChild(jellyfinStep(status.jellyfin));
@@ -157,7 +172,7 @@ async function refresh() {
     return;
   }
 
-  // Only rebuild the DOM if data actually changed â€” prevents flash every 60s
+  // Only rebuild the DOM if data actually changed — prevents flash every 60s
   const key = JSON.stringify(status);
   if (key === lastKey) return;
   lastKey = key;
@@ -168,7 +183,7 @@ export default {
   async mount(container) {
     containerRef = container;
     lastKey = "";
-    container.appendChild(h("div.empty", "Loadingâ€¦"));
+    container.appendChild(h("div.empty", "Loading\u2026"));
     await refresh();
     timer = setInterval(refresh, 60000);
   },
