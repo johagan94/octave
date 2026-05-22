@@ -3,6 +3,9 @@
 
 # User's actual config (commit config.example.json instead)
 config.json
+.mailmap
+.codex/
+.agents/
 
 # UI-managed persistent settings (credentials saved from UI)
 settings.json

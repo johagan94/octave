@@ -91,8 +91,7 @@ def load_config() -> dict:
     if not client_id:
         raise ConfigError(
             "Missing Spotify Client ID. Configure it in the UI Settings page, "
-            "or ship a bundled OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID so end users "
-            "need no developer account."
+            "or set SPOTIFY_CLIENT_ID in the container environment."
         )
     cfg["spotify"]["client_id"] = client_id
     cfg["spotify"]["client_secret"] = _get_optional_credential("SPOTIFY_CLIENT_SECRET")
@@ -112,9 +111,16 @@ def load_config() -> dict:
             pass
     if jf_url:
         cfg["jellyfin"]["url"] = jf_url
+    if not str(cfg["jellyfin"].get("url", "")).strip():
+        raise ConfigError(
+            "Missing Jellyfin URL. Configure it in the UI Settings page, "
+            "or set JELLYFIN_URL in the container environment."
+        )
 
     cfg.setdefault("lidarr", {})
-    cfg["lidarr"]["api_key"] = _get_credential("LIDARR_API_KEY")
+    lidarr_api_key = _get_optional_credential("LIDARR_API_KEY")
+    if lidarr_api_key:
+        cfg["lidarr"]["api_key"] = lidarr_api_key
     ld_url = os.environ.get("LIDARR_URL", "").strip()
     if not ld_url:
         try:

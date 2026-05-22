@@ -1,17 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="title desc">
+  <title id="title">Octave</title>
+  <desc id="desc">A dark rounded square with five vertical music level bars.</desc>
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#818cf8"/>
-      <stop offset="100%" stop-color="#6366f1"/>
+    <linearGradient id="bar" x1="0" y1="20" x2="0" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="0.48" stop-color="#14b8a6"/>
+      <stop offset="1" stop-color="#38bdf8"/>
     </linearGradient>
   </defs>
-  <rect width="200" height="200" rx="40" fill="#121217"/>
-  <rect x="30" y="40" width="16" height="120" rx="4" fill="url(#g)" opacity="0.6"/>
-  <rect x="56" y="25" width="16" height="150" rx="4" fill="url(#g)" opacity="0.75"/>
-  <rect x="82" y="50" width="16" height="100" rx="4" fill="url(#g)" opacity="0.85"/>
-  <rect x="108" y="30" width="16" height="140" rx="4" fill="url(#g)" opacity="0.9"/>
-  <rect x="134" y="20" width="16" height="160" rx="4" fill="url(#g)"/>
-  <circle cx="142" cy="20" r="6" fill="#a5b4fc" opacity="0.5">
-    <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite"/>
-  </circle>
+  <rect width="200" height="200" rx="36" fill="#101216"/>
+  <rect x="31" y="72" width="18" height="72" rx="9" fill="url(#bar)" opacity="0.62"/>
+  <rect x="61" y="46" width="18" height="108" rx="9" fill="url(#bar)" opacity="0.8"/>
+  <rect x="91" y="28" width="18" height="144" rx="9" fill="url(#bar)"/>
+  <rect x="121" y="56" width="18" height="98" rx="9" fill="url(#bar)" opacity="0.86"/>
+  <rect x="151" y="78" width="18" height="66" rx="9" fill="url(#bar)" opacity="0.68"/>
+  <circle cx="100" cy="100" r="57" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="8"/>
 </svg>

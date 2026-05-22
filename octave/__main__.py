@@ -47,8 +47,15 @@ def run_sync(
 
     sp = make_spotify_client(cfg)
     jf = JellyfinClient(cfg, track_cache=track_cache)
-    lidarr = LidarrClient(cfg)
-    mb = MusicBrainzResolver()
+    lidarr_cfg = cfg.get("lidarr", {})
+    lidarr_enabled = bool(
+        str(lidarr_cfg.get("url", "")).strip()
+        and str(lidarr_cfg.get("api_key", "")).strip()
+    )
+    lidarr = LidarrClient(cfg) if lidarr_enabled else None
+    mb = MusicBrainzResolver() if lidarr_enabled else None
+    if not lidarr_enabled:
+        log.info("Lidarr is not configured; missing-track requests will be skipped")
 
     # Validate track cache against current Jellyfin library
     jf._build_index()
@@ -98,20 +105,22 @@ def run_sync(
         "playlists": 0, "waiting_lidarr": 0,
     }
     total = len(playlists)
+    errors: list[str] = []
     for n, pl_cfg in enumerate(playlists, 1):
+        playlist_id = pl_cfg.get("spotify_playlist_id", f"playlist-{n}")
         try:
             stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm)
-            if stats:
-                totals["matched"] += stats.get("matched", 0)
-                totals["missing"] += stats.get("missing", 0)
-                totals["albums_requested"] += stats.get("albums_requested", 0)
-                totals["waiting_lidarr"] += stats.get("waiting_lidarr", 0)
-                totals["playlists"] += 1
+            totals["matched"] += stats.get("matched", 0)
+            totals["missing"] += stats.get("missing", 0)
+            totals["albums_requested"] += stats.get("albums_requested", 0)
+            totals["waiting_lidarr"] += stats.get("waiting_lidarr", 0)
+            totals["playlists"] += 1
         except Exception as exc:
             log.exception(
                 "Error syncing playlist %s: %s",
-                pl_cfg.get("spotify_playlist_id"), exc,
+                playlist_id, exc,
             )
+            errors.append(f"{playlist_id}: {exc}")
         finally:
             if progress_cb:
                 try:
@@ -136,6 +145,14 @@ def run_sync(
         totals["waiting_lidarr"],
     )
     save_state(state)
+    if errors:
+        preview = "; ".join(errors[:3])
+        more = f" (+{len(errors) - 3} more)" if len(errors) > 3 else ""
+        raise RuntimeError(
+            f"Sync failed for {len(errors)} of {total} playlist(s): {preview}{more}"
+        )
+    if totals["playlists"] == 0:
+        raise RuntimeError("No playlists synced successfully")
     return totals
 
 

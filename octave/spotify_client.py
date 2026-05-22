@@ -187,9 +187,9 @@ def get_user_playlists(sp: spotipy.Spotify) -> list[dict]:
     """Return all playlists in the authenticated user's library.
 
     Includes both owned and followed/saved playlists (paginated).
-    Spotify-owned editorial/algorithmic playlists (owner id == "spotify",
-    e.g. "Today's Top Hits") are skipped — the Web API returns 404 for
-    those since Spotify's Nov-2024 deprecation, so syncing them is futile.
+    Spotify-owned editorial/algorithmic playlists (owner id == "spotify")
+    are skipped because the Web API no longer exposes their tracks through
+    this playlist endpoint.
 
     Each entry matches the config.json playlist shape so the sync loop
     can consume it directly.

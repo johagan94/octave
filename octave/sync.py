@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import os
 import threading
 from collections import Counter
 from typing import Optional
@@ -34,8 +35,8 @@ _MAX_LIDARR_WORKERS = 4
 
 
 def request_album_in_lidarr(
-    lidarr: LidarrClient,
-    mb: MusicBrainzResolver,
+    lidarr: Optional[LidarrClient],
+    mb: Optional[MusicBrainzResolver],
     spotify_album_id: str,
     spotify_album_name: str,
     spotify_artist_id: str,
@@ -232,7 +233,7 @@ def sync_playlist(
         sp_tracks = get_playlist_tracks(sp, spotify_id)
     except Exception as exc:
         log.error("  Spotify: failed to fetch tracks for %s: %s", spotify_id, exc)
-        return {"matched": 0, "missing": 0, "albums_requested": 0, "waiting_lidarr": 0}
+        raise RuntimeError(f"Spotify failed to fetch playlist {spotify_id}: {exc}") from exc
 
     if not sp_tracks:
         log.warning("  Empty playlist, skipping.")
@@ -261,7 +262,7 @@ def sync_playlist(
         jf._build_index()
     except Exception as exc:
         log.error("  Jellyfin: failed to build library index: %s", exc)
-        return {"matched": 0, "missing": 0, "albums_requested": 0, "waiting_lidarr": 0}
+        raise RuntimeError(f"Jellyfin failed to build library index: {exc}") from exc
 
     waiting_track_ids = set(state.get("waiting_for_lidarr_tracks", {}).keys())
 
@@ -352,6 +353,7 @@ def sync_playlist(
             log.debug("  Cover art skipped: %s", exc)
     except Exception as exc:
         log.error("  Jellyfin: failed to update playlist: %s", exc)
+        raise RuntimeError(f"Jellyfin failed to update playlist {jf_name}: {exc}") from exc
 
     # ── Send missing albums to Lidarr (parallel) ──────────────────────────
     matched_count = len(matched_ids)
@@ -368,6 +370,15 @@ def sync_playlist(
         return {
             "matched": matched_count, "missing": missing_count,
             "albums_requested": 0, "waiting_lidarr": len(waiting_lidarr),
+        }
+
+    if lidarr is None or mb is None:
+        log.info("  Lidarr not configured; missing albums were recorded but not requested")
+        return {
+            "matched": matched_count,
+            "missing": missing_count,
+            "albums_requested": 0,
+            "waiting_lidarr": len(waiting_lidarr),
         }
 
     seen_albums: set[str] = set()
@@ -468,11 +479,13 @@ def write_missing_tracks(
     playlist_name: str,
     spotify_id: str,
     missing: list[dict],
-    output_dir: str = "data",
+    output_dir: Optional[str] = None,
 ) -> None:
     """Persist missing tracks to JSON for UI download."""
     import json
     from pathlib import Path
+    if output_dir is None:
+        output_dir = os.environ.get("SYNC_DATA_DIR", "data")
     out = Path(output_dir) / "missing_tracks.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     existing: dict = {}

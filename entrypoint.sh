@@ -7,7 +7,7 @@
 #
 # Volume mounts expected:
 #   /app/config  → user-editable config.json (and per-concern files later)
-#   /app/data    → sync_state.json, .spotify_token_cache, run history DB
+#   /app/data    → sync_state.json, .spotify_pkce_token, run history DB
 #   /app/logs    → octave.log (rotated by the host or a sidecar)
 #
 # All paths inside the package are env-overridable so we don't hard-code them.
@@ -34,7 +34,7 @@ fi
 # ---------------------------------------------------------------------------
 # Token cache permissions: contains a Spotify refresh token. Keep it 0600.
 # ---------------------------------------------------------------------------
-TOKEN_CACHE=${SPOTIFY_TOKEN_CACHE:-$DATA_DIR/.spotify_token_cache}
+TOKEN_CACHE=${SPOTIFY_TOKEN_CACHE:-$DATA_DIR/.spotify_pkce_token}
 if [[ -f "$TOKEN_CACHE" ]]; then
     chmod 600 "$TOKEN_CACHE" || true
 fi
