@@ -37,7 +37,7 @@ a sync because the blocking sync work is dispatched via `asyncio.to_thread`.
 
 ```
 octave/                   importable package
-├── __init__.py                 __version__ = "3.0.1"
+├── __init__.py                 __version__ = "3.0.2"
 ├── __main__.py                 CLI entry: python -m octave
 │                               Exports run_sync(progress_cb, playlist_ids) → dict
 ├── config.py                   load_config() — reads SYNC_CONFIG env var
