@@ -48,7 +48,7 @@ sync: ## Trigger a full sync via the API (container must be running)
 	  -H 'Content-Type: application/json' -d '{}' \
 	  | python3 -m json.tool && echo ""
 
-sync-one: ## Trigger sync for a single playlist: make sync-one ID=37i9dQZF1DXcBWIGoYBM5M
+sync-one: ## Trigger sync for a single playlist: make sync-one ID=<spotify_playlist_id>
 	@test -n "$(ID)" || (echo "Usage: make sync-one ID=<spotify_playlist_id>" && exit 1)
 	@curl -sf -X POST http://localhost:$${WEB_PORT:-8000}/api/sync/all \
 	  -H 'Content-Type: application/json' \
