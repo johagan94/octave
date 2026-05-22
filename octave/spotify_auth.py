@@ -32,22 +32,17 @@ log = logging.getLogger(__name__)
 
 SCOPES = "playlist-read-private playlist-read-collaborative user-library-read"
 
-# Bundled PUBLIC Spotify Client ID so end users need NO developer account.
-# PKCE means there is no client secret, so a Client ID is safe to ship in
-# plaintext (it already appears in every authorize URL). Resolution order:
+# Spotify Client ID resolution order:
 #   1. SPOTIFY_CLIENT_ID env var
 #   2. Settings UI value (settings.json)
-#   3. this bundled default
+#   3. OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID env var, for private builds only
 #
-# Project maintainer: register ONE app at https://developer.spotify.com,
-# add redirect URI http://127.0.0.1:8888/callback, request extended quota
-# mode, and either paste its Client ID below or ship it via the
-# OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID build/env var. End users then only click
-# "Connect Spotify" — they never create an app.
-_BUNDLED_PLACEHOLDER = "REPLACE_WITH_BUNDLED_SPOTIFY_CLIENT_ID"
+# PKCE does not require a client secret, but public installs should normally
+# use their own Spotify app because Spotify development-mode apps are
+# allowlisted. Maintainers can still ship a public Client ID at runtime with
+# OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID for private builds.
 BUNDLED_CLIENT_ID = (
     os.environ.get("OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID", "").strip()
-    or _BUNDLED_PLACEHOLDER
 )
 
 DEFAULT_REDIRECT_URI = "http://127.0.0.1:8888/callback"
@@ -75,13 +70,11 @@ def resolve_client_id(explicit: str = "") -> str:
     """
     if explicit and explicit.strip():
         return explicit.strip()
-    if BUNDLED_CLIENT_ID and BUNDLED_CLIENT_ID != _BUNDLED_PLACEHOLDER:
-        return BUNDLED_CLIENT_ID
-    return ""
+    return BUNDLED_CLIENT_ID.strip()
 
 
 def has_bundled_client_id() -> bool:
-    return bool(BUNDLED_CLIENT_ID) and BUNDLED_CLIENT_ID != _BUNDLED_PLACEHOLDER
+    return bool(BUNDLED_CLIENT_ID.strip())
 
 
 def _token_path() -> Path:

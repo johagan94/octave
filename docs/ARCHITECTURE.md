@@ -37,7 +37,7 @@ a sync because the blocking sync work is dispatched via `asyncio.to_thread`.
 
 ```
 octave/                   importable package
-├── __init__.py                 __version__ = "2.0.0"
+├── __init__.py                 __version__ = "3.0.1"
 ├── __main__.py                 CLI entry: python -m octave
 │                               Exports run_sync(progress_cb, playlist_ids) → dict
 ├── config.py                   load_config() — reads SYNC_CONFIG env var
@@ -57,7 +57,7 @@ octave/                   importable package
     ├── app.py                  create_app() factory, lifespan, scheduler wiring
     ├── models.py               Pydantic v2 contracts (locked — see below)
     ├── envelope.py             ok(data), err(code, msg, status) helpers
-    ├── auth.py                 require_api_key FastAPI dependency
+    ├── auth.py                 optional HTTP Basic auth dependency
     ├── db.py                   SQLite layer — sync_runs table, WAL mode
     ├── runner.py               SyncRunner singleton — asyncio.Lock, progress, history
     ├── reachability.py         async pings for Spotify / Jellyfin / Lidarr
@@ -72,8 +72,8 @@ octave/                   importable package
         ├── index.html          SPA shell — sticky header, hash router
         ├── app.css             Hand-rolled dark theme (CSS custom properties)
         └── js/
-            ├── app.js          Entry: registers views, wires API-key dialog
-            ├── api.js          fetch() wrapper — reads localStorage key, unwraps envelope
+            ├── app.js          Entry: registers views, auth-aware navigation
+            ├── api.js          fetch() wrapper — unwraps envelope, handles 401 responses
             ├── router.js       Hash router — mount/unmount views on hash change
             ├── h.js            h(tag, props, ...children) micro-DOM helper
             ├── toast.js        Fixed-position toast singleton

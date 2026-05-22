@@ -1,4 +1,4 @@
-# Credentials — never commit these
+# Credentials: never commit these
 .env
 
 # User's actual config (commit config.example.json instead)
@@ -12,6 +12,7 @@ settings.json
 
 # Spotify OAuth token cache
 .spotify_token_cache
+.spotify_pkce_token
 
 # Runtime state
 sync_state.json

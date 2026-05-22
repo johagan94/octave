@@ -59,6 +59,7 @@ const SECTIONS = [
     help: "Optional. Get your API key from last.fm/api/account/create",
     fields: [
       { key: "LASTFM_API_KEY", label: "API Key", type: "password", required: false },
+      { key: "LASTFM_USERNAME", label: "Username", type: "text", required: false },
     ],
   },
   {

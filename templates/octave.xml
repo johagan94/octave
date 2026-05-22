@@ -1,0 +1,49 @@
+<Container version="2">
+  <Name>Octave</Name>
+  <Repository>ghcr.io/jackohagan94-afk/octave:latest</Repository>
+  <Registry>https://github.com/jackohagan94-afk/octave/pkgs/container/octave</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <WebUI>http://[IP]:[PORT:8000]</WebUI>
+  <Icon>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/docs/logo.svg</Icon>
+  <Overview>Sync Spotify playlists into Jellyfin, request missing albums in Lidarr, and enrich matching with ListenBrainz and Last.fm.</Overview>
+  <Description>Octave keeps Spotify playlists mirrored into Jellyfin with per-playlist sync modes, cover art, missing-track reports, and optional Lidarr album requests. Spotify authentication uses PKCE; create your own Spotify app and enter its Client ID in Settings or in this template.</Description>
+  <Support>https://github.com/jackohagan94-afk/octave/issues</Support>
+  <Project>https://github.com/jackohagan94-afk/octave</Project>
+  <ReadMe>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/README.md</ReadMe>
+  <Category>MediaApp:Music MediaServer:Music Tools:Utilities</Category>
+  <TemplateURL>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/templates/octave.xml</TemplateURL>
+  <License>MIT</License>
+
+  <Config Name="Web UI" Target="8000" Default="8000" Mode="tcp" Description="Octave web interface." Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="Spotify OAuth Callback" Target="8888" Default="8888" Mode="tcp" Description="Temporary PKCE OAuth callback listener. Add http://SERVER-IP:8888/callback or your reverse-proxy callback URL to your Spotify app redirect URIs." Type="Port" Display="always" Required="true" Mask="false">8888</Config>
+
+  <Config Name="Config Path" Target="/app/config" Default="/mnt/user/appdata/octave/config" Mode="rw" Description="Non-secret Octave config volume." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/octave/config</Config>
+  <Config Name="Data Path" Target="/app/data" Default="/mnt/user/appdata/octave/data" Mode="rw" Description="Runtime data, SQLite history, settings, and Spotify PKCE token cache." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/octave/data</Config>
+  <Config Name="Logs Path" Target="/app/logs" Default="/mnt/user/appdata/octave/logs" Mode="rw" Description="Octave log files." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/octave/logs</Config>
+
+  <Config Name="Spotify Client ID" Target="SPOTIFY_CLIENT_ID" Default="" Description="Spotify app Client ID. Required for Spotify PKCE auth unless configured later in the Octave Settings UI." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Spotify Redirect URI" Target="SPOTIFY_REDIRECT_URI" Default="" Description="Optional explicit Spotify callback URI. Leave blank to let Octave infer it, or set your reverse-proxy callback such as https://octave.example.com/callback." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="Jellyfin URL" Target="JELLYFIN_URL" Default="" Description="Jellyfin URL reachable from the Octave container, for example http://192.168.1.10:8096." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Jellyfin API Key" Target="JELLYFIN_API_KEY" Default="" Description="Jellyfin API key. Can also be configured in Octave Settings." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Jellyfin User ID" Target="JELLYFIN_USER_ID" Default="" Description="Jellyfin user ID that owns created playlists." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+
+  <Config Name="Lidarr URL" Target="LIDARR_URL" Default="" Description="Optional Lidarr URL reachable from the Octave container." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Lidarr API Key" Target="LIDARR_API_KEY" Default="" Description="Optional Lidarr API key for requesting missing albums." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <Config Name="Auth Username" Target="AUTH_USERNAME" Default="octave" Description="HTTP Basic Auth username." Type="Variable" Display="advanced" Required="false" Mask="false">octave</Config>
+  <Config Name="Auth Password" Target="AUTH_PASSWORD" Default="" Description="HTTP Basic Auth password. Leave blank for LAN-trust mode; set before exposing Octave outside your LAN." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <Config Name="Sync Schedule" Target="SYNC_SCHEDULE" Default="0 2 * * *" Description="Cron schedule for automatic sync. Empty disables scheduled sync." Type="Variable" Display="advanced" Required="false" Mask="false">0 2 * * *</Config>
+  <Config Name="Sync On Startup" Target="SYNC_ON_STARTUP" Default="false" Description="Run a sync when the container starts." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="Sync All Playlists" Target="SYNC_ALL_PLAYLISTS" Default="" Description="Set true to discover and sync all Spotify playlists visible to the connected account." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Timezone" Target="TZ" Default="UTC" Description="IANA timezone for logs and scheduled syncs." Type="Variable" Display="advanced" Required="false" Mask="false">UTC</Config>
+  <Config Name="Log Level" Target="LOG_LEVEL" Default="INFO" Description="Python logging level." Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
+
+  <Config Name="ListenBrainz Token" Target="LISTENBRAINZ_TOKEN" Default="" Description="Optional ListenBrainz user token." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="Last.fm API Key" Target="LASTFM_API_KEY" Default="" Description="Optional Last.fm API key." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="Last.fm Username" Target="LASTFM_USERNAME" Default="" Description="Optional Last.fm username for scrobble import workflows." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>

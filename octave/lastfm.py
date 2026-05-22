@@ -22,7 +22,7 @@ RATE_GAP = 0.21
 class LastFMClient:
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.environ.get("LASTFM_API_KEY", "").strip()
+        self.api_key = api_key or _setting("LASTFM_API_KEY")
         if not self.api_key:
             log.debug("LastFM: no API key set — client disabled")
         self._session = requests.Session()
@@ -76,6 +76,44 @@ class LastFMClient:
             results.extend(batch)
             page += 1
         return results[:limit]
+
+    def get_recent_tracks(
+        self,
+        user: str,
+        from_ts: Optional[int] = None,
+        to_ts: Optional[int] = None,
+        limit: int = 1000,
+    ) -> list[dict]:
+        """Get recent scrobbles for a user, oldest first."""
+        results: list[dict] = []
+        page = 1
+        while len(results) < limit:
+            params = {
+                "method": "user.getRecentTracks",
+                "user": user,
+                "limit": min(200, limit - len(results)),
+                "page": page,
+                "extended": 1,
+            }
+            if from_ts is not None:
+                params["from"] = int(from_ts)
+            if to_ts is not None:
+                params["to"] = int(to_ts)
+            try:
+                data = self._get(**params)
+            except (requests.HTTPError, LastFMError) as exc:
+                log.warning("LastFM: recent tracks failed: %s", exc)
+                break
+            recent = data.get("recenttracks", {})
+            batch = recent.get("track", [])
+            if not batch:
+                break
+            results.extend(t for t in batch if "date" in t)
+            total_pages = int(recent.get("@attr", {}).get("totalPages", page) or page)
+            if page >= total_pages:
+                break
+            page += 1
+        return list(reversed(results[:limit]))
 
     # ── Similar tracks / artists ─────────────────────────────────────
 
@@ -161,3 +199,15 @@ def _enforce_rate(client: LastFMClient) -> None:
     gap = RATE_GAP - (time.time() - client._last_req)
     if gap > 0:
         time.sleep(gap)
+
+
+def _setting(key: str) -> str:
+    val = os.environ.get(key, "").strip()
+    if val:
+        return val
+    try:
+        from .web.settings import get_setting
+
+        return get_setting(key).strip()
+    except Exception:
+        return ""

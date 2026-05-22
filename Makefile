@@ -1,7 +1,7 @@
-# Makefile — spotify_sync convenience targets.
+# Makefile — Octave convenience targets.
 # Run `make help` to see all targets.
 
-IMAGE   ?= spotify-sync:local
+IMAGE   ?= octave:local
 COMPOSE ?= docker compose
 
 .PHONY: help build up down restart logs sync shell lint test clean
@@ -58,17 +58,15 @@ sync-one: ## Trigger sync for a single playlist: make sync-one ID=37i9dQZF1DXcBW
 # ── Development helpers ───────────────────────────────────────────────────────
 
 shell: ## Open a shell inside the running container
-	$(COMPOSE) exec spotify-sync bash
+	$(COMPOSE) exec octave bash
 
 lint: ## Run ruff linter over the Python package
 	@command -v ruff >/dev/null 2>&1 \
 	  || { echo "ruff not found — install with: pip install ruff"; exit 1; }
-	ruff check spotify_sync/
+	ruff check octave/
 
-test: ## Run pod smoke tests
-	./venv/bin/python _pod1_check.py
-	./venv/bin/python _pod3_check.py
-	./venv/bin/python _pod4_rebuild_check.py
+test: ## Run unit tests
+	python -m pytest tests
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
 

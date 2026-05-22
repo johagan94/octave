@@ -1,4 +1,4 @@
 """Spotify → Jellyfin + Lidarr sync package."""
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 __title__ = "Octave — Spotify to Jellyfin Sync"

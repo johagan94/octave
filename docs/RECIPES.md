@@ -34,9 +34,9 @@ by service name.
 **docker-compose.yml** (octave side):
 ```yaml
 services:
-  spotify-sync:
+  octave:
     build: .
-    image: spotify-sync:local
+    image: octave:local
     networks:
       - default
       - homelab          # join the existing network
@@ -89,7 +89,7 @@ SYNC_MODE=oneshot
 
 Cron entry on the host (runs at 02:00 daily):
 ```cron
-0 2 * * * cd /home/jack/octave && docker compose run --rm spotify-sync
+0 2 * * * cd /home/jack/octave && docker compose run --rm octave
 ```
 
 ---
@@ -123,13 +123,12 @@ server {
 }
 ```
 
-**Recommended: set an API key** when exposing publicly:
+**Recommended: set a password** when exposing publicly:
 ```env
-API_KEY=a-long-random-string-here
+AUTH_USERNAME=octave
+AUTH_PASSWORD=a-long-random-string-here
 ```
-
-Then configure it in the UI's API key dialog (top-right gear icon) so the
-frontend includes `X-API-Key` on every request.
+The browser will prompt using HTTP Basic Auth.
 
 ---
 
@@ -137,15 +136,15 @@ frontend includes `X-API-Key` on every request.
 
 ```yaml
 services:
-  spotify-sync:
+  octave:
     build: .
-    image: spotify-sync:local
+    image: octave:local
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.spotify-sync.rule=Host(`sync.example.com`)"
-      - "traefik.http.routers.spotify-sync.entrypoints=websecure"
-      - "traefik.http.routers.spotify-sync.tls.certresolver=letsencrypt"
-      - "traefik.http.services.spotify-sync.loadbalancer.server.port=8000"
+      - "traefik.http.routers.octave.rule=Host(`sync.example.com`)"
+      - "traefik.http.routers.octave.entrypoints=websecure"
+      - "traefik.http.routers.octave.tls.certresolver=letsencrypt"
+      - "traefik.http.services.octave.loadbalancer.server.port=8000"
     networks:
       - traefik-public
       - default
@@ -173,12 +172,13 @@ admin pointing to the host.
 
 ---
 
-## Adding an API key (local auth)
+## Adding HTTP Basic Auth
 
 Even on a LAN, you may want to protect the API from other devices:
 
 ```env
-API_KEY=change-me-to-something-random
+AUTH_USERNAME=octave
+AUTH_PASSWORD=change-me-to-something-random
 ```
 
 Generate a random key:
@@ -186,8 +186,7 @@ Generate a random key:
 openssl rand -hex 32
 ```
 
-The frontend stores the key in `localStorage` — enter it once via the key
-dialog in the top-right of the UI.
+The browser stores the Basic Auth session for the current tab/profile.
 
 ---
 
@@ -213,7 +212,7 @@ Disable after diagnosing — DEBUG mode is chatty (~10× the log volume).
 | Host path | Container path | Notes |
 |---|---|---|
 | `./config/config.json` | `/app/config/config.json` | Playlist list + match thresholds. Editable from the UI. |
-| `./data/.spotify_token_cache` | `/app/data/.spotify_token_cache` | OAuth refresh token. Keep secret. chmod 600 by entrypoint. |
+| `./data/.spotify_pkce_token` | `/app/data/.spotify_pkce_token` | OAuth refresh token. Keep secret. chmod 600 where supported. |
 | `./data/sync_state.json` | `/app/data/sync_state.json` | Lidarr request state machine. Don't delete unless resetting. |
 | `./data/octave.db` | `/app/data/octave.db` | SQLite run history. Safe to delete to reset history. |
 | `./logs/octave.log` | `/app/logs/octave.log` | Application log. Rotated by the host or a logrotate sidecar. |

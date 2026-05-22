@@ -2,12 +2,12 @@
   "_comment": "Non-secret settings. All credentials go in .env (see .env.example).",
 
   "jellyfin": {
-    "url": "http://jellyfin:8096",
+    "url": "",
     "music_library_id": ""
   },
 
   "lidarr": {
-    "url": "http://lidarr:8686",
+    "url": "",
     "quality_profile_id": 1,
     "metadata_profile_id": 1,
     "root_folder": ""
@@ -15,11 +15,5 @@
 
   "match_threshold": 80,
 
-  "playlists": [
-    {
-      "spotify_playlist_id": "37i9dQZF1DXcBWIGoYBM5M",
-      "jellyfin_playlist_name": "Today's Top Hits",
-      "sync_mode": "add_only"
-    }
-  ]
+  "playlists": []
 }

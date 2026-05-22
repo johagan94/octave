@@ -47,7 +47,7 @@ If the problem persists after upgrading, it means the old version wrote a
 stuck "running" row before the fix was in place. Fix it manually:
 
 ```bash
-docker compose exec spotify-sync sqlite3 /app/data/octave.db \
+docker compose exec octave sqlite3 /app/data/octave.db \
   "UPDATE sync_runs SET status='error', finished_at=datetime('now'), \
    error='interrupted' WHERE status='running';"
 make restart
@@ -55,24 +55,22 @@ make restart
 
 ---
 
-### Spotify 403 "Active premium subscription required"
+### Spotify 403 errors
 
-**Symptom:** Sync fails with HTTP 403 and message like "Player command failed:
-Premium required" or "Active premium subscription required".
+**Symptom:** Sync fails with HTTP 403 while reading Spotify playlists.
 
-**Cause:** The Spotify account associated with the developer app does not have
-an active Premium subscription. The Web API requires Premium for playlist
-reading with OAuth.
+**Cause:** The stored OAuth token may be stale, missing playlist scopes, or
+associated with a different Spotify account than the playlists you are trying
+to read.
 
 **Fix:**
 
-1. Confirm the account has an active Premium subscription at
-   [spotify.com/account](https://www.spotify.com/account/)
-2. If you just subscribed, wait a few hours — Spotify's API can take time to
-   reflect billing changes
+1. Open Settings and confirm Spotify is connected.
+2. Confirm the playlist is owned by, followed by, or visible to the connected
+   account.
 3. Refresh the token by deleting the cache and re-authenticating:
    ```bash
-   rm ./data/.spotify_token_cache
+   rm ./data/.spotify_pkce_token
    make restart
    ```
    Then trigger a sync to redo the OAuth flow.
@@ -88,7 +86,7 @@ with an error like `no token cache`.
 1. Browse to `http://<host>:8000/`
 2. Click **Sync** on the Dashboard
 3. Approve the Spotify permissions in your browser
-4. Verify `./data/.spotify_token_cache` now exists
+4. Verify `./data/.spotify_pkce_token` now exists
 
 ---
 

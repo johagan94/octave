@@ -70,6 +70,7 @@ class PlaylistEntry(BaseModel):
     sync_mode: Literal["add_only", "full_sync", "rebuild"] = "add_only"
     cover_url: Optional[str] = None
     min_interval_hours: Optional[int] = None
+    configured: bool = True
 
 
 class HealthInfo(BaseModel):

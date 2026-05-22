@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import sys
-from datetime import timezone
 from typing import Callable, Optional
 
 import os
@@ -39,7 +39,7 @@ def run_sync(
     """
     cfg = load_config()
     state = load_state()
-    state["current_run"] = datetime.datetime.now(timezone.utc).isoformat()
+    state["current_run"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     # Load track cache for faster matching across runs
     track_cache = TrackCache()
@@ -49,8 +49,6 @@ def run_sync(
     jf = JellyfinClient(cfg, track_cache=track_cache)
     lidarr = LidarrClient(cfg)
     mb = MusicBrainzResolver()
-    lb = ListenBrainzClient() if os.environ.get("LISTENBRAINZ_TOKEN") else None
-    lfm = LastFMClient() if os.environ.get("LASTFM_API_KEY") else None
 
     # Validate track cache against current Jellyfin library
     jf._build_index()
@@ -59,10 +57,21 @@ def run_sync(
 
     from .web.settings import get_setting
     sync_all = get_setting("SYNC_ALL_PLAYLISTS", "").strip().lower() in ("1", "true", "yes", "on")
+    listenbrainz_token = get_setting("LISTENBRAINZ_TOKEN", "").strip()
+    lastfm_api_key = get_setting("LASTFM_API_KEY", "").strip()
+    lb = ListenBrainzClient(listenbrainz_token) if listenbrainz_token else None
+    lfm = LastFMClient(lastfm_api_key) if lastfm_api_key else None
 
     if sync_all:
         log.info("SYNC_ALL_PLAYLISTS enabled — discovering all account playlists")
         all_playlists = get_user_playlists(sp)
+        try:
+            cache_dir = os.environ.get("SYNC_DATA_DIR", "data")
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(os.path.join(cache_dir, "discovered_playlists.json"), "w") as fh:
+                json.dump(all_playlists, fh, indent=2)
+        except Exception:
+            log.exception("Could not cache discovered Spotify playlists")
         if not all_playlists:
             log.error("SYNC_ALL_PLAYLISTS is on but no playlists were discovered "
                       "(is Spotify connected via PKCE?)")

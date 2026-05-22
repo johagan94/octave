@@ -25,9 +25,15 @@ env
 # Local-only state and secrets
 .env
 .spotify_token_cache
+.spotify_pkce_token
 sync_state.json
 spotify_sync.log
 *.log
+
+# Docker-compose host-side volume mounts
+/config/
+/data/
+/logs/
 
 # UI-managed persistent settings
 settings.json

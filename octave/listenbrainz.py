@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from itertools import islice
 from typing import Optional
 
 import requests
@@ -22,12 +23,19 @@ RATE_LIMIT_FLOOR = 0.5  # minimum seconds between requests
 class ListenBrainzClient:
 
     def __init__(self, token: Optional[str] = None):
-        self.token = token or os.environ.get("LISTENBRAINZ_TOKEN", "").strip() or None
+        self.token = token or _setting("LISTENBRAINZ_TOKEN") or None
         self._session = requests.Session()
         self._session.headers["User-Agent"] = "octave-sync/3.0"
         if self.token:
             self._session.headers["Authorization"] = f"Token {self.token}"
         self._last_req = 0.0
+
+    def validate_token(self) -> dict:
+        """Validate the configured token and return ListenBrainz user details."""
+        data = self._get("/validate-token")
+        if not data.get("valid"):
+            raise RuntimeError("ListenBrainz token is invalid")
+        return data
 
     def _get(self, path: str, **params) -> dict:
         _enforce_rate(self)
@@ -42,6 +50,33 @@ class ListenBrainzClient:
         self._last_req = time.time()
         resp.raise_for_status()
         return resp.json()
+
+    def submit_listens(self, listens: list[dict], listen_type: str = "import") -> list[dict]:
+        """Submit ListenBrainz listens in API-sized batches."""
+        responses: list[dict] = []
+        for batch in _chunks(listens, 1000):
+            responses.append(self._post(
+                "/submit-listens",
+                {"listen_type": listen_type, "payload": batch},
+            ))
+        return responses
+
+    def get_latest_import(self, user_name: str) -> int:
+        """Return the newest imported-listen timestamp for a user."""
+        data = self._get("/latest-import", user_name=user_name)
+        return int(data.get("latest_import") or 0)
+
+    def set_latest_import(self, timestamp: int) -> dict:
+        """Persist the newest imported-listen timestamp after an import."""
+        return self._post("/latest-import", {"ts": int(timestamp)})
+
+    def create_playlist(self, title: str, recording_mbids: list[str]) -> dict:
+        """Create a ListenBrainz playlist from MusicBrainz recording MBIDs."""
+        return self._post("/playlist/create", _jspf_playlist(title, recording_mbids))
+
+    def import_spotify_playlist_jspf(self, spotify_playlist_id: str) -> dict:
+        """Ask ListenBrainz to convert a Spotify playlist to JSPF."""
+        return self._get(f"/playlist/spotify/{spotify_playlist_id}/tracks")
 
     # ── MBID resolution ──────────────────────────────────────────────
 
@@ -166,3 +201,40 @@ def _enforce_rate(client: ListenBrainzClient) -> None:
     gap = RATE_LIMIT_FLOOR - (time.time() - client._last_req)
     if gap > 0:
         time.sleep(gap)
+
+
+def _setting(key: str) -> str:
+    val = os.environ.get(key, "").strip()
+    if val:
+        return val
+    try:
+        from .web.settings import get_setting
+
+        return get_setting(key).strip()
+    except Exception:
+        return ""
+
+
+def _chunks(items: list[dict], size: int):
+    iterator = iter(items)
+    while True:
+        batch = list(islice(iterator, size))
+        if not batch:
+            break
+        yield batch
+
+
+def _jspf_playlist(title: str, recording_mbids: list[str]) -> dict:
+    return {
+        "playlist": {
+            "title": title,
+            "track": [
+                {
+                    "identifier": [
+                        f"https://musicbrainz.org/recording/{mbid}",
+                    ],
+                }
+                for mbid in recording_mbids
+            ],
+        },
+    }

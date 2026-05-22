@@ -4,31 +4,30 @@ Step-by-step instructions for getting `octave` running from scratch.
 
 ---
 
-## 1 — Spotify developer app
+## 1 — Spotify OAuth
 
-You need a Spotify developer app to get OAuth credentials. This is free and
-does not require a premium account for the app itself (you do need Premium to
-use the Spotify Web API in a meaningful way).
+Octave uses Spotify PKCE OAuth. A Client Secret is not required for normal
+setup.
+
+If your image ships a bundled Client ID, you can skip straight to **Connect
+Spotify** in the Settings page. Otherwise:
 
 1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
    and log in with your Spotify account.
 2. Click **Create app**.
-3. Fill in any name and description (e.g. "Home Sync").
-4. Set **Website** to anything (e.g. `http://localhost`).
-5. Under **Redirect URIs**, add:
+3. Fill in any name and description.
+4. Set **Website** to anything, such as `http://localhost`.
+5. Under **Redirect URIs**, add the callback URI shown by Octave Settings.
+   For a local browser and Docker host, this is usually:
    ```
    http://127.0.0.1:8888/callback
    ```
-   If your browser and your Docker host are on **different machines**, use the
-   host's IP instead of `127.0.0.1`:
+   If your browser and Docker host are on different machines, use the host IP:
    ```
    http://192.168.1.50:8888/callback
    ```
-   Then set `SPOTIFY_REDIRECT_URI` in `.env` to match.
 6. Select **Web API** as the API to use.
-7. Click **Save**, then open the app settings and copy:
-   - **Client ID**
-   - **Client Secret** (click "View client secret")
+7. Click **Save**, then copy the **Client ID** into Octave Settings.
 
 ---
 
@@ -74,13 +73,9 @@ cp .env.example .env
 $EDITOR .env
 ```
 
-Minimum required fields:
+Minimum values:
 
 ```env
-SPOTIFY_CLIENT_ID=...
-SPOTIFY_CLIENT_SECRET=...
-SPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback
-
 JELLYFIN_URL=http://jellyfin:8096
 JELLYFIN_API_KEY=...
 JELLYFIN_USER_ID=...
@@ -127,17 +122,17 @@ docker compose ps
 
 ---
 
-## 7 — Spotify OAuth (first run only)
+## 7 — Spotify OAuth
 
 1. Browse to `http://<host>:8000/`
-2. Click **Dashboard**, then click **Sync**
+2. Open **Settings**, then click **Connect Spotify**
 3. The container starts a temporary HTTP server on port 8888
 4. Spotify redirects your browser to `http://127.0.0.1:8888/callback?code=...`
 5. The container captures the code, exchanges it for tokens, and saves
-   `./data/.spotify_token_cache`
+   `./data/.spotify_pkce_token`
 6. All future syncs happen automatically — port 8888 is no longer used
 
-The token refresh is handled by `spotipy`. As long as `./data/.spotify_token_cache`
+As long as `./data/.spotify_pkce_token`
 exists and hasn't been revoked, you won't need to reauthenticate.
 
 ---

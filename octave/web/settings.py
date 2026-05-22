@@ -38,6 +38,7 @@ KNOB_KEYS = [
     "SYNC_ON_STARTUP",
     "SYNC_ALL_PLAYLISTS",
     "SYNC_SCHEDULE",
+    "LASTFM_USERNAME",
     "LOG_LEVEL",
     "TZ",
     "WEB_PORT",
@@ -131,8 +132,12 @@ def save_settings(updates: dict) -> dict:
         try:
             os.chmod(tmp, 0o600)
         except OSError:
-            pass  # best effort (e.g. Windows / odd filesystems)
+            pass
         tmp.replace(path)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
         log.info("settings saved to %s", path)
 
         # Also update os.environ for in-process hot-reload of AUTH credentials

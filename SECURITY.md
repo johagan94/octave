@@ -6,8 +6,7 @@ Report security vulnerabilities by opening a private issue or contacting the mai
 
 ## Security Practices
 
-- API keys and tokens are loaded from environment variables only
+- API keys and tokens are loaded from environment variables or the UI-managed settings store
 - No secrets are committed to the repository
 - Dependencies are scanned for known vulnerabilities
 - Containers run as non-root users where applicable
-

@@ -6,18 +6,12 @@ services:
     ports:
       - "8000:8000"
       - "8888:8888"
-    # Join the shared homelab network so service-name URLs like
-    # http://jellyfin:8096 / http://lidarr:8686 resolve. Without this,
-    # compose puts octave on an isolated default network and all
-    # service-name integrations fail with connection timeouts.
-    networks:
-      - homelab
     volumes:
       - ./config:/app/config:rw
       - ./data:/app/data:rw
       - ./logs:/app/logs:rw
     environment:
-      # Credentials � all optional now; can be configured via UI Settings page.
+      # Credentials: all optional now; can be configured via UI Settings page.
       # Env vars take priority over saved settings.
       # Public Client ID bundled so end users need NO Spotify dev account.
       # PKCE = no secret to protect. Set this once (project maintainer) to a
@@ -36,7 +30,7 @@ services:
       - SYNC_DATA_DIR=/app/data
       - SYNC_ON_STARTUP=${SYNC_ON_STARTUP:-false}
       # Empty default (not "false") so the UI/settings.json value can take
-      # effect — get_setting() gives env vars priority, a literal "false"
+      # effect. get_setting() gives env vars priority, a literal "false"
       # here would permanently override the toggle.
       - SYNC_ALL_PLAYLISTS=${SYNC_ALL_PLAYLISTS:-}
       - SYNC_SCHEDULE=${SYNC_SCHEDULE:-0 2 * * *}
@@ -46,7 +40,4 @@ services:
       - AUTH_PASSWORD=${AUTH_PASSWORD:-}
       - LISTENBRAINZ_TOKEN=${LISTENBRAINZ_TOKEN:-}
       - LASTFM_API_KEY=${LASTFM_API_KEY:-}
-
-networks:
-  homelab:
-    external: true
+      - LASTFM_USERNAME=${LASTFM_USERNAME:-}

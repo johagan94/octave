@@ -25,9 +25,9 @@ Spotify playlist ──► match against Jellyfin library ──► add to Jelly
                                    └──► Last.fm similar-artist discovery
 ```
 
-Octave keeps your Spotify playlists perfectly mirrored in Jellyfin. When tracks
-are missing from your library, it requests the albums in Lidarr — then tracks
-them across runs until they appear. One container, no manual work.
+Octave keeps your Spotify playlists in Jellyfin. When tracks are missing from
+your library, it can request albums in Lidarr and track them across runs until
+they appear. One container, local-first, with a web UI for setup.
 
 ---
 
@@ -48,8 +48,9 @@ them across runs until they appear. One container, no manual work.
 - **waiting_for_lidarr** — tracks queued albums across runs so you know what's in flight
 - **Compilation guard** — avoids matching compilation albums to wrong artists
 - **SQLite history** — every run stored; survives restarts cleanly
-- **Optional API key** — empty = LAN-trust; set for internet deployments
-- **Client-credentials fallback** — works without Spotify OAuth for public playlists
+- **HTTP Basic Auth** — optional browser-native auth for exposed deployments
+- **PKCE Spotify OAuth** — no client secret required for normal setup
+- **Sync all playlists** — discover owned/followed Spotify playlists automatically
 - **Optional ListenBrainz** — MBID resolution, global popularity data
 - **Optional Last.fm** — playcounts, similar track/artist discovery
 - **Fully responsive** — works on phone, tablet, and desktop
@@ -58,50 +59,41 @@ them across runs until they appear. One container, no manual work.
 
 ## Quick start
 
-### 1 — Spotify developer app
-
-1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
-2. Create an app (any name/description)
-3. Add `http://127.0.0.1:8888/callback` as a Redirect URI
-4. Copy **Client ID** and **Client Secret**
-
-See [docs/SETUP.md](docs/SETUP.md) for a full walkthrough.
-
-### 2 — Clone and configure
+### 1 — Clone and start
 
 ```bash
 git clone https://github.com/jackohagan94-afk/octave.git
 cd octave
 cp .env.example .env
+mkdir -p config data logs
+# Linux only: make bind mounts writable by the container user.
+sudo chown -R 1000:1000 config data logs
+docker compose up -d --build
 ```
 
-Edit `.env` and fill in at minimum:
+### 2 — Configure in the web UI
 
-```env
-SPOTIFY_CLIENT_ID=your_client_id
-SPOTIFY_CLIENT_SECRET=your_client_secret
-JELLYFIN_URL=http://jellyfin:8096
-JELLYFIN_API_KEY=your_jellyfin_api_key
-JELLYFIN_USER_ID=your_jellyfin_user_guid
-LIDARR_URL=http://lidarr:8686
-LIDARR_API_KEY=your_lidarr_api_key
-```
+Open `http://localhost:8000`, then fill in Settings:
 
-### 3 — Fix volume permissions (Linux only, first run)
+- Spotify: create a Spotify app, paste its Client ID in Settings, then click
+  **Connect Spotify**. PKCE does not need a Client Secret, though Octave still
+  accepts one for legacy setups.
+- Jellyfin: URL, API key, and user ID.
+- Lidarr: URL and API key if you want missing albums requested automatically.
+
+See [docs/SETUP.md](docs/SETUP.md) for a full walkthrough.
+
+### 3 — Linux volume permissions
+
+If you skipped the permission step before first start, run it and restart:
 
 ```bash
 mkdir -p config data logs
 sudo chown -R 1000:1000 config data logs
+docker compose restart
 ```
 
-### 4 — Start
-
-```bash
-docker compose build
-docker compose up -d
-```
-
-### 5 — Add playlists
+### 4 — Add playlists
 
 Browse to `http://localhost:8000` → **Playlists** → paste a Spotify URL or ID.
 
@@ -121,6 +113,7 @@ Browse to `http://localhost:8000` → **Playlists** → paste a Spotify URL or I
 
 | Service | Env var | What it does |
 |---|---|---|
+| **Spotify** | `SPOTIFY_CLIENT_ID` | Your Spotify app Client ID for PKCE auth |
 | **ListenBrainz** | `LISTENBRAINZ_TOKEN` | MusicBrainz ID resolution, global popularity stats |
 | **Last.fm** | `LASTFM_API_KEY` | Playcounts, similar tracks/artists, scrobble metadata |
 
@@ -135,9 +128,11 @@ See [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) for the full reference.
 | `SYNC_SCHEDULE` | `0 2 * * *` | Cron for auto-sync. Empty to disable. |
 | `SYNC_ON_STARTUP` | `false` | Trigger sync immediately on boot. |
 | `TZ` | `UTC` | Timezone for cron and log timestamps. |
-| `API_KEY` | (empty) | Require `X-API-Key` on all API calls. |
+| `AUTH_USERNAME` | `octave` | HTTP Basic Auth username. |
+| `AUTH_PASSWORD` | (empty) | Empty disables auth; set a password before exposing Octave. |
 | `LISTENBRAINZ_TOKEN` | (empty) | Optional — enables MBID/popularity features. |
 | `LASTFM_API_KEY` | (empty) | Optional — enables playcounts/discovery. |
+| `LASTFM_USERNAME` | (empty) | Optional — used for Last.fm scrobble import workflows. |
 
 ---
 

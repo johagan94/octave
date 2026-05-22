@@ -46,11 +46,38 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Build (and push on tag)
-    uses: docker/build-push-action@v5
-    with:
-      context: .
-      push: ${{ github.event_name != 'pull_request' }}
-      tags: ${{ steps.meta.outputs.tags }}
-      labels: ${{ steps.meta.outputs.labels }}
-      cache-from: type=gha
-      cache-to: type=gha,mode=max
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  smoke-test:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    needs: build
+    # Run against the locally built image (not GHCR) so PRs are covered too.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile package
+        run: python -m compileall octave
+
+      - name: Install test dependencies
+        run: pip install pytest
+
+      - name: Unit tests
+        run: pytest tests

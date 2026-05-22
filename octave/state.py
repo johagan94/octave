@@ -32,7 +32,7 @@ def save_state(state: dict) -> None:
     path = state_path()
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     with _state_lock:
-        with tmp_path.open("w") as fh:
+        with open(tmp_path, "w") as fh:
             json.dump(state, fh, indent=2)
             fh.flush()
             os.fsync(fh.fileno())
@@ -42,4 +42,3 @@ def save_state(state: dict) -> None:
 def get_waiting_track_ids(state: dict) -> Set[str]:
     """Return Spotify track IDs currently waiting for Lidarr download."""
     return set(state.get("waiting_for_lidarr_tracks", {}).keys())
-

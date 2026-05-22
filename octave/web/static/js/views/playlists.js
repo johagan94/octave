@@ -87,6 +87,11 @@ async function onAdd(form) {
 }
 
 async function onDelete(id, name) {
+  const existing = cache.find(p => p.spotify_playlist_id === id);
+  if (existing && existing.configured === false) {
+    toast("Auto-discovered playlist is not in the manual config", "warn");
+    return;
+  }
   if (!confirm(`Delete "${name || id}" from sync config?\n\n(This does NOT delete the playlist in Jellyfin.)`)) return;
   try {
     await api.del(`/api/playlists/${encodeURIComponent(id)}`);
@@ -115,7 +120,9 @@ async function onChangeMode(id, mode) {
   const existing = cache.find(p => p.spotify_playlist_id === id);
   if (!existing) return;
   try {
-    await api.del(`/api/playlists/${encodeURIComponent(id)}`);
+    if (existing.configured !== false) {
+      await api.del(`/api/playlists/${encodeURIComponent(id)}`);
+    }
     await api.post("/api/playlists", { ...existing, sync_mode: mode });
     toast(`Mode → ${mode}`);
     refresh();
@@ -134,7 +141,9 @@ async function bulkChangeMode(mode) {
   for (const p of targets) {
     if (p.sync_mode === mode) { ok++; continue; }
     try {
-      await api.del(`/api/playlists/${encodeURIComponent(p.spotify_playlist_id)}`);
+      if (p.configured !== false) {
+        await api.del(`/api/playlists/${encodeURIComponent(p.spotify_playlist_id)}`);
+      }
       await api.post("/api/playlists", { ...p, sync_mode: mode });
       ok++;
     } catch (_) { fail++; }
@@ -154,6 +163,11 @@ async function bulkDelete() {
   let ok = 0, fail = 0;
   for (const id of [...selected]) {
     try {
+      const item = cache.find(p => p.spotify_playlist_id === id);
+      if (item && item.configured === false) {
+        fail++;
+        continue;
+      }
       await api.del(`/api/playlists/${encodeURIComponent(id)}`);
       ok++;
     } catch (_) { fail++; }
@@ -211,6 +225,7 @@ function row(p) {
   const id = p.spotify_playlist_id;
   const isChecked = selected.has(id);
   const stats = syncStats[id];
+  const isConfigured = p.configured !== false;
 
   const modeSelect = h("select", {
     onchange: (e) => onChangeMode(id, e.target.value),
@@ -233,14 +248,23 @@ function row(p) {
         ? h("img.playlist-cover", { src: p.cover_url, loading: "lazy", title: p.jellyfin_playlist_name || id })
         : h("div.playlist-cover-placeholder"),
     ),
-    h("td", p.jellyfin_playlist_name || h("em", { style: { color: "var(--text-dim)" } }, "(unnamed)")),
+    h("td",
+      h("div", { style: { display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" } },
+        h("span", p.jellyfin_playlist_name || h("em", { style: { color: "var(--text-dim)" } }, "(unnamed)")),
+        !isConfigured && h("span.badge", "auto"),
+      ),
+    ),
     h("td", h("span.id", id)),
     h("td", modeSelect),
     h("td", statBadge(stats)),
     h("td", { style: { width: "1%", whiteSpace: "nowrap" } },
       h("div", { style: { display: "flex", gap: "4px" } },
         h("button", { onclick: () => onSyncOne(id, p.jellyfin_playlist_name), title: "Sync this playlist now" }, "↺"),
-        h("button.danger", { onclick: () => onDelete(id, p.jellyfin_playlist_name) }, "✕"),
+        h("button.danger", {
+          onclick: () => onDelete(id, p.jellyfin_playlist_name),
+          disabled: !isConfigured,
+          title: isConfigured ? "Remove from sync config" : "Auto-discovered by sync-all",
+        }, "✕"),
       ),
     ),
   );
@@ -310,7 +334,7 @@ function render() {
 
   tableCard.appendChild(
     h("div.card-row", { style: { marginBottom: "12px" } },
-      h("h2", { style: { margin: 0 } }, `Configured (${cache.length})`),
+      h("h2", { style: { margin: 0 } }, `Playlists (${cache.length})`),
       bulkBar,
     )
   );

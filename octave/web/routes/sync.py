@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import csv
-import io
 import json
+from io import StringIO
 from pathlib import Path
 from typing import List, Literal, Optional
 
@@ -112,20 +112,27 @@ def download_missing_csv(spotify_id: str):
     tracks = pl.get("tracks", [])
     if not tracks:
         return Response(content="No tracks", media_type="text/plain")
-    buf = io.StringIO()
-    writer = csv.writer(buf)
+    out = StringIO()
+    writer = csv.writer(out)
     writer.writerow(["spotify_id", "title", "artist", "album", "album_type", "spotify_url"])
-    for t in tracks:
+    for track in tracks:
         writer.writerow([
-            t.get("spotify_id", ""),
-            t.get("title", ""),
-            t.get("artist", ""),
-            t.get("album", ""),
-            t.get("album_type", ""),
-            t.get("spotify_url", ""),
+            _csv_cell(track.get("spotify_id", "")),
+            _csv_cell(track.get("title", "")),
+            _csv_cell(track.get("artist", "")),
+            _csv_cell(track.get("album", "")),
+            _csv_cell(track.get("album_type", "")),
+            _csv_cell(track.get("spotify_url", "")),
         ])
     return Response(
-        content=buf.getvalue(),
+        content=out.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=missing_{spotify_id}.csv"},
     )
+
+
+def _csv_cell(value: object) -> str:
+    text = str(value or "")
+    if text[:1] in ("=", "+", "-", "@"):
+        return "'" + text
+    return text
