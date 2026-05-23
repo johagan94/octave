@@ -7,7 +7,7 @@
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
   <WebUI>http://[IP]:[PORT:8000]</WebUI>
-  <Icon>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/docs/logo.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/jackohagan94-afk/octave/dev-main/docs/logo.png</Icon>
   <Overview>Sync Spotify playlists into Jellyfin, request missing albums in Lidarr, and enrich matching with ListenBrainz and Last.fm.</Overview>
   <Description>Octave keeps Spotify playlists mirrored into Jellyfin with per-playlist sync modes, cover art, missing-track reports, and optional Lidarr album requests. Spotify authentication uses PKCE; create your own Spotify app and enter its Client ID in Settings or in this template.</Description>
   <Support>https://github.com/jackohagan94-afk/octave/issues</Support>
