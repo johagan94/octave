@@ -14,7 +14,6 @@ Only /api/health is exempt (Docker healthcheck must not need credentials).
 
 from __future__ import annotations
 
-import os
 import secrets
 
 from fastapi import Depends, HTTPException
