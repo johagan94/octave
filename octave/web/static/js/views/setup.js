@@ -125,9 +125,9 @@ function lidarrStep(intg) {
 
 function buildDOM(status, containerRef) {
   containerRef.innerHTML = "";
-  containerRef.appendChild(h("h2", "Setup"));
+  containerRef.appendChild(h("h2", "Health"));
   containerRef.appendChild(h("p", { style: { color: "var(--text-dim)" } },
-    "Configure each integration. Pings run every 60s — or click Re-test now."));
+    "Integration health checks. Pings run every 60s — or click Re-test now."));
 
   containerRef.appendChild(spotifyStep(status.spotify));
   containerRef.appendChild(jellyfinStep(status.jellyfin));

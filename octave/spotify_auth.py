@@ -255,6 +255,32 @@ def revoke_token() -> None:
         log.info("Spotify PKCE token revoked")
 
 
+_CALLBACK_PAGE = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Octave – Spotify Auth</title>
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;padding:60px 24px;font-family:ui-monospace,"Cascadia Code",Menlo,monospace;
+     background:#060608;color:#e4e4ec;font-size:15px;line-height:1.6;text-align:center}}
+.icon{{font-size:52px;margin-bottom:12px}}
+h2{{margin:0 0 10px;font-size:22px;font-weight:700}}
+p{{margin:0 0 8px;color:#9b9bad}}
+pre{{background:#15151d;border:1px solid #222230;border-radius:8px;padding:12px;
+     font-size:12px;overflow:auto;color:#f87171;text-align:left;max-width:600px;margin:16px auto 0}}
+</style>
+</head>
+<body>
+<div class="icon">{icon}</div>
+<h2>{title}</h2>
+{body}
+</body>
+</html>"""
+
+
 class _CallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         parsed = urlparse(self.path)
@@ -272,28 +298,38 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         if error:
             log.warning("Spotify OAuth error from callback: %s", error)
             safe = html.escape(error)
-            self._respond(200,
-                f"<h2>&#x274C; Auth denied: {safe}</h2>"
-                f"<p>You can close this tab.</p>".encode())
+            self._respond(200, _CALLBACK_PAGE.format(
+                icon="&#x274C;",
+                title="Authorization denied",
+                body=f"<p>Spotify returned: <strong>{safe}</strong></p><p>You can close this tab.</p>",
+            ).encode())
             return
 
         if not code or not state:
-            self._respond(400, b"<h2>Invalid callback: missing code or state.</h2>")
+            self._respond(400, _CALLBACK_PAGE.format(
+                icon="&#x26A0;&#xFE0F;",
+                title="Invalid callback",
+                body="<p>Missing <code>code</code> or <code>state</code> parameter.</p>",
+            ).encode())
             return
 
         try:
             _exchange_code(code, state)
             log.info("Spotify PKCE auth completed successfully")
-            self._respond(200,
-                b"<h2>&#x2705; Spotify connected!</h2>"
-                b"<p>You can close this tab and return to Octave.</p>"
-                b"<script>setTimeout(()=>window.close(),2000);</script>")
+            self._respond(200, _CALLBACK_PAGE.format(
+                icon="&#x2705;",
+                title="Spotify connected!",
+                body="<p>You can close this tab and return to Octave.</p>"
+                     "<script>setTimeout(()=>window.close(),2000);</script>",
+            ).encode())
         except Exception as exc:
             log.error("Spotify PKCE token exchange failed: %s", exc)
             safe = html.escape(str(exc))
-            self._respond(500,
-                f"<h2>&#x274C; Token exchange failed</h2><pre>{safe}</pre>"
-                f"<p>You can close this tab.</p>".encode())
+            self._respond(500, _CALLBACK_PAGE.format(
+                icon="&#x274C;",
+                title="Token exchange failed",
+                body=f"<p>You can close this tab.</p><pre>{safe}</pre>",
+            ).encode())
 
     def _respond(self, status: int, body: bytes) -> None:
         self.send_response(status)

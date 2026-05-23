@@ -260,6 +260,7 @@ async function handleAction(action) {
     try {
       await api.del("/api/spotify/token");
       toast("Spotify disconnected");
+      refreshSpotifyStatus();
     } catch (e) {
       toast("Failed to disconnect Spotify: " + e.message, "error");
     }
@@ -361,10 +362,8 @@ function collectUpdates() {
       if (f.type === "checkbox") {
         updates[f.key] = el.checked ? "true" : "false";
       } else {
-        var val = el.value.trim();
-        if (val) {
-          updates[f.key] = val;
-        }
+        // Send empty string to clear a previously saved setting
+        updates[f.key] = el.value.trim();
       }
     });
   });
