@@ -28,6 +28,7 @@ from .routes import health, logs, playlists, setup
 from .routes import sync as sync_route
 from .routes import settings as settings_route
 from .routes import spotify_auth as spotify_auth_route
+from .routes import discover as discover_route
 from .runner import runner
 
 log = logging.getLogger(__name__)
@@ -157,6 +158,7 @@ def create_app() -> FastAPI:
     api_router.include_router(playlists.router)
     api_router.include_router(settings_route.router)
     api_router.include_router(spotify_auth_route.router)
+    api_router.include_router(discover_route.router)
     app.include_router(api_router)
 
     # Frontend SPA -- serve index.html + JS + CSS at /

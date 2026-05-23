@@ -1,4 +1,4 @@
-// Settings view: form-based credential and runtime-knob editor.
+// Settings view: credential editor with auto-discovery flows.
 // Secrets are masked by default with a show/hide toggle.
 
 import { api } from "../api.js";
@@ -6,7 +6,6 @@ import { h } from "../h.js";
 import { toast } from "../toast.js";
 
 let containerRef = null;
-let fields = {};
 let originalValues = {};
 
 const SECTIONS = [
@@ -29,20 +28,30 @@ const SECTIONS = [
   {
     title: "Jellyfin",
     description: "Media server URL and API credentials.",
-    help: "API key: Jellyfin Dashboard -> API Keys. User ID: visible in URL when you click your user.",
+    help: "API key: Jellyfin Dashboard -> API Keys. User ID: visible in URL when you click your user. Or use 'Sign in' to fill these automatically.",
+    discoverId: "jellyfin-discover",
     fields: [
       { key: "JELLYFIN_URL", label: "Server URL", type: "url", required: true },
       { key: "JELLYFIN_API_KEY", label: "API Key", type: "password", required: true },
       { key: "JELLYFIN_USER_ID", label: "User ID", type: "text", required: true },
     ],
+    actions: [
+      { label: "Auto-detect URL", action: "jellyfinAutoDetect" },
+      { label: "Sign in to Jellyfin", action: "jellyfinConnect" },
+    ],
   },
   {
     title: "Lidarr",
     description: "Music management for auto-requesting missing albums.",
-    help: "Optional -- leave unset to disable Lidarr integration.",
+    help: "Optional — leave unset to disable. Find your API key in Lidarr: Settings → General → Security → API Key.",
     fields: [
       { key: "LIDARR_URL", label: "Server URL", type: "url", required: false },
       { key: "LIDARR_API_KEY", label: "API Key", type: "password", required: false },
+    ],
+    actions: [
+      { label: "Auto-detect URL", action: "lidarrAutoDetect" },
+      { label: "Open Lidarr Settings", action: "lidarrOpenSettings" },
+      { label: "Validate Key", action: "lidarrValidate" },
     ],
   },
   {
@@ -65,7 +74,7 @@ const SECTIONS = [
   {
     title: "Security",
     description: "HTTP Basic Auth for the web interface.",
-    help: "Set a password to protect Octave with HTTP Basic Auth. The browser handles the login prompt natively — no page reload or extra steps needed. Leave Password blank for open access (LAN-trust mode). Username defaults to 'octave' if left blank.",
+    help: "Set a password to protect Octave with HTTP Basic Auth. The browser handles the login prompt natively. Leave Password blank for open access (LAN-trust mode). Username defaults to 'octave' if left blank.",
     fields: [
       { key: "AUTH_USERNAME", label: "Username", type: "text", required: false, placeholder: "octave" },
       { key: "AUTH_PASSWORD", label: "Password", type: "password", required: false },
@@ -84,6 +93,8 @@ const SECTIONS = [
     ],
   },
 ];
+
+// ── Field rendering ───────────────────────────────────────────────────────
 
 function fieldInput(field, value, source) {
   const isSecret = field.type === "password";
@@ -127,18 +138,13 @@ function fieldInput(field, value, source) {
         "data-secret": isSecret ? "1" : "",
       })
     );
-    if (isSecret && value) {
+    if (isSecret && isSet) {
       children.push(
         h("button.show-toggle", {
           onclick: (e) => {
-            var inp = e.target.parentElement.querySelector('input[data-key="' + field.key + '"]');
-            if (inp.type === "password") {
-              inp.type = "text";
-              e.target.textContent = "hide";
-            } else {
-              inp.type = "password";
-              e.target.textContent = "show";
-            }
+            const inp = e.target.parentElement.querySelector('input[data-key="' + field.key + '"]');
+            if (inp.type === "password") { inp.type = "text"; e.target.textContent = "hide"; }
+            else { inp.type = "password"; e.target.textContent = "show"; }
           },
         }, "show")
       );
@@ -153,14 +159,14 @@ function fieldInput(field, value, source) {
 }
 
 function sectionHTML(section, settings) {
-  var fieldEls = section.fields.map(function(f) {
-    var s = settings[f.key] || {};
+  const fieldEls = section.fields.map(f => {
+    const s = settings[f.key] || {};
     return fieldInput(f, s.value, s.source);
   });
 
-  var actionEls = (section.actions || []).map(function(a) {
-    return h("button", { onclick: function() { handleAction(a.action); } }, a.label);
-  });
+  const actionEls = (section.actions || []).map(a =>
+    h("button", { onclick: () => handleAction(a.action) }, a.label)
+  );
 
   return h("div.card",
     h("div.card-row",
@@ -171,13 +177,20 @@ function sectionHTML(section, settings) {
       ? h("p", { id: section.statusId, style: { fontSize: "13px", margin: "8px 0", fontWeight: "600" } }, "Status: checking…")
       : null,
     ...fieldEls,
-    actionEls.length > 0 ? h("div", { style: { display: "flex", gap: "8px", marginTop: "8px" } }, ...actionEls) : null,
+    section.discoverId
+      ? h("div", { id: section.discoverId, style: { marginTop: "8px" } })
+      : null,
+    actionEls.length > 0
+      ? h("div", { style: { display: "flex", gap: "8px", marginTop: "8px", flexWrap: "wrap" } }, ...actionEls)
+      : null,
     h("p", { style: { color: "var(--text-dim)", fontSize: "11px", marginTop: "8px" } }, section.help),
   );
 }
 
+// ── Spotify status helpers ────────────────────────────────────────────────
+
 function setSpotifyStatusText(text, color) {
-  var el = document.getElementById("spotify-status");
+  const el = document.getElementById("spotify-status");
   if (!el) return;
   el.textContent = text;
   el.style.color = color || "var(--text-dim)";
@@ -185,14 +198,14 @@ function setSpotifyStatusText(text, color) {
 
 async function refreshSpotifyStatus() {
   try {
-    var res = await api.get("/api/spotify/auth-status");
+    const res = await api.get("/api/spotify/auth-status");
     if (res.authenticated) {
-      var exp = res.expires_at ? new Date(res.expires_at * 1000).toLocaleString() : "unknown";
+      const exp = res.expires_at ? new Date(res.expires_at * 1000).toLocaleString() : "unknown";
       setSpotifyStatusText("Status: Connected ✅  (token valid until " + exp + ")", "var(--ok)");
     } else if (!res.client_id_available) {
       setSpotifyStatusText("Status: No Client ID available — set one below or ship a bundled default", "var(--error, #c00)");
     } else {
-      var note = res.bundled_client_id ? " (using bundled app — no dev account needed)" : "";
+      const note = res.bundled_client_id ? " (using bundled app — no dev account needed)" : "";
       setSpotifyStatusText("Status: Not connected" + note + " — click 'Connect Spotify'", "var(--warn, #b80)");
     }
     return res.authenticated === true;
@@ -206,9 +219,9 @@ let _spotifyPollTimer = null;
 
 function startSpotifyPolling() {
   if (_spotifyPollTimer) clearInterval(_spotifyPollTimer);
-  var deadline = Date.now() + 120000; // poll up to 2 min
-  _spotifyPollTimer = setInterval(async function () {
-    var done = await refreshSpotifyStatus();
+  const deadline = Date.now() + 120000;
+  _spotifyPollTimer = setInterval(async () => {
+    const done = await refreshSpotifyStatus();
     if (done || Date.now() > deadline) {
       clearInterval(_spotifyPollTimer);
       _spotifyPollTimer = null;
@@ -217,24 +230,177 @@ function startSpotifyPolling() {
   }, 3000);
 }
 
+// ── Jellyfin connect dialog ───────────────────────────────────────────────
+
+function openJellyfinDialog() {
+  const existingUrl = (document.getElementById("JELLYFIN_URL") || {}).value || "";
+
+  // Build dialog DOM
+  let usernameEl, passwordEl, urlEl, statusEl, libraryRow, librarySelect;
+  let pendingCreds = null; // { api_key, user_id, url }
+
+  const dialog = h("dialog",
+    h("h3", { style: { margin: "0 0 16px" } }, "Sign in to Jellyfin"),
+
+    h("div.setting-field",
+      h("label", { for: "jf-url" }, "Server URL"),
+      urlEl = h("input", { id: "jf-url", type: "url", value: existingUrl, placeholder: "http://jellyfin:8096", autocomplete: "off" }),
+    ),
+    h("div.setting-field",
+      h("label", { for: "jf-username" }, "Username"),
+      usernameEl = h("input", { id: "jf-username", type: "text", autocomplete: "username", placeholder: "admin" }),
+    ),
+    h("div.setting-field",
+      h("label", { for: "jf-password" }, "Password"),
+      passwordEl = h("input", { id: "jf-password", type: "password", autocomplete: "current-password" }),
+    ),
+
+    statusEl = h("p", { style: { fontSize: "13px", minHeight: "20px", margin: "8px 0", color: "var(--text-dim)" } }),
+
+    // Library picker — hidden until after successful auth
+    libraryRow = h("div", { style: { display: "none", marginTop: "8px" } },
+      h("div.setting-field",
+        h("label", { for: "jf-library" }, "Music Library"),
+        librarySelect = h("select", { id: "jf-library" }),
+      ),
+      h("p", { style: { fontSize: "11px", color: "var(--text-dim)", margin: "4px 0 0" } },
+        "Octave will sync playlists into this library. The ID is saved to config.json."),
+    ),
+
+    h("menu",
+      h("button", {
+        onclick: () => dialog.close(),
+        style: { marginRight: "auto" },
+      }, "Cancel"),
+      h("button.primary", {
+        id: "jf-submit",
+        onclick: () => doJellyfinAuth(urlEl, usernameEl, passwordEl, statusEl, libraryRow, librarySelect, dialog),
+      }, "Sign in"),
+    ),
+  );
+
+  // Submit on Enter
+  dialog.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !libraryRow.style.display !== "none") {
+      doJellyfinAuth(urlEl, usernameEl, passwordEl, statusEl, libraryRow, librarySelect, dialog);
+    }
+  });
+
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  usernameEl.focus();
+}
+
+async function doJellyfinAuth(urlEl, usernameEl, passwordEl, statusEl, libraryRow, librarySelect, dialog) {
+  const url      = urlEl.value.trim();
+  const username = usernameEl.value.trim();
+  const password = passwordEl.value;
+
+  if (!url || !username) {
+    statusEl.textContent = "Server URL and username are required.";
+    statusEl.style.color = "var(--error)";
+    return;
+  }
+
+  const btn = document.getElementById("jf-submit");
+  if (btn) btn.disabled = true;
+  statusEl.textContent = "Authenticating…";
+  statusEl.style.color = "var(--text-dim)";
+
+  try {
+    const res = await api.post("/api/discover/jellyfin/connect", { url, username, password });
+
+    // Fill API key + User ID fields in the main form
+    const urlField = document.getElementById("JELLYFIN_URL");
+    const keyField = document.getElementById("JELLYFIN_API_KEY");
+    const uidField = document.getElementById("JELLYFIN_USER_ID");
+    if (urlField) urlField.value = url;
+    if (keyField) { keyField.value = res.api_key; keyField.type = "text"; }
+    if (uidField) uidField.value = res.user_id;
+
+    statusEl.textContent = "Signed in as " + res.display_name + " ✅";
+    statusEl.style.color = "var(--ok)";
+
+    // Populate library picker
+    const libs = res.music_libraries && res.music_libraries.length
+      ? res.music_libraries
+      : res.libraries || [];
+
+    if (libs.length > 0) {
+      librarySelect.innerHTML = "";
+      libs.forEach(lib => {
+        librarySelect.appendChild(h("option", { value: lib.id }, lib.name + (lib.type !== "music" ? " (" + lib.type + ")" : "")));
+      });
+      libraryRow.style.display = "block";
+
+      // Change the Submit button to "Apply & Close"
+      if (btn) {
+        btn.textContent = "Apply & Close";
+        btn.disabled = false;
+        btn.onclick = async () => {
+          await applyJellyfinLibrary(url, res.api_key, res.user_id, librarySelect.value, dialog);
+        };
+      }
+    } else {
+      // No libraries found — just close
+      if (btn) {
+        btn.textContent = "Done";
+        btn.disabled = false;
+        btn.onclick = () => dialog.close();
+      }
+      toast("Signed in as " + res.display_name + ". Save settings to persist.", "ok");
+    }
+  } catch (e) {
+    statusEl.textContent = e.message || "Authentication failed";
+    statusEl.style.color = "var(--error)";
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function applyJellyfinLibrary(url, apiKey, userId, libraryId, dialog) {
+  try {
+    // Save credentials to settings.json
+    await api.put("/api/settings", {
+      JELLYFIN_URL:     url,
+      JELLYFIN_API_KEY: apiKey,
+      JELLYFIN_USER_ID: userId,
+    });
+
+    // Update music_library_id in config.json
+    const cfgData = await api.get("/api/config");
+    const cfg = cfgData.config || {};
+    cfg.jellyfin = cfg.jellyfin || {};
+    cfg.jellyfin.music_library_id = libraryId;
+    await api.put("/api/config", cfg);
+
+    toast("Jellyfin connected and library saved ✅");
+    dialog.close();
+    await load(); // refresh settings display
+  } catch (e) {
+    toast("Failed to save: " + e.message, "error");
+  }
+}
+
+// ── Action handlers ───────────────────────────────────────────────────────
+
 async function handleAction(action) {
+  // ── Spotify ──
   if (action === "connectSpotify") {
-    // Save Client ID first so the server can use it
-    var clientIdEl = document.getElementById("SPOTIFY_CLIENT_ID");
-    var redirectUriEl = document.getElementById("SPOTIFY_REDIRECT_URI");
-    var updates = {};
-    if (clientIdEl && clientIdEl.value.trim()) updates.SPOTIFY_CLIENT_ID = clientIdEl.value.trim();
+    const clientIdEl   = document.getElementById("SPOTIFY_CLIENT_ID");
+    const redirectUriEl = document.getElementById("SPOTIFY_REDIRECT_URI");
+    const updates = {};
+    if (clientIdEl && clientIdEl.value.trim())   updates.SPOTIFY_CLIENT_ID   = clientIdEl.value.trim();
     if (redirectUriEl && redirectUriEl.value.trim()) updates.SPOTIFY_REDIRECT_URI = redirectUriEl.value.trim();
     if (Object.keys(updates).length) {
       try { await api.put("/api/settings", updates); } catch (_) {}
     }
     try {
-      var res = await api.get("/api/spotify/auth-url");
-      var win = window.open(res.auth_url, "_blank", "noopener");
+      const res = await api.get("/api/spotify/auth-url");
+      const win = window.open(res.auth_url, "_blank", "noopener");
       if (!win) {
-        toast("Popup blocked — allow popups, or open this URL manually: " + res.auth_url, "error");
+        toast("Popup blocked — allow popups, or open manually: " + res.auth_url, "error");
       }
-      toast("Authorize Spotify in the new tab. Requesting scopes: " + res.scopes.join(", "));
+      toast("Authorize Spotify in the new tab. Scopes: " + res.scopes.join(", "));
       setSpotifyStatusText("Status: waiting for you to authorize in the popup…", "var(--warn, #b80)");
       startSpotifyPolling();
     } catch (e) {
@@ -244,9 +410,9 @@ async function handleAction(action) {
 
   if (action === "checkSpotifyStatus") {
     try {
-      var res = await api.get("/api/spotify/auth-status");
+      const res = await api.get("/api/spotify/auth-status");
       if (res.authenticated) {
-        var exp = res.expires_at ? new Date(res.expires_at * 1000).toLocaleString() : "unknown";
+        const exp = res.expires_at ? new Date(res.expires_at * 1000).toLocaleString() : "unknown";
         toast("Spotify: connected ✅ | expires " + exp + " | scopes: " + (res.scope || "?"));
       } else {
         toast("Spotify: not connected — " + (res.reason || "unknown"), "error");
@@ -265,11 +431,80 @@ async function handleAction(action) {
       toast("Failed to disconnect Spotify: " + e.message, "error");
     }
   }
+
+  // ── Jellyfin ──
+  if (action === "jellyfinAutoDetect") {
+    toast("Scanning for Jellyfin…");
+    try {
+      const res = await api.get("/api/discover/services");
+      if (res.jellyfin && res.jellyfin.length > 0) {
+        const url = res.jellyfin[0];
+        const el = document.getElementById("JELLYFIN_URL");
+        if (el) el.value = url;
+        toast("Found Jellyfin at " + url);
+      } else {
+        toast("No Jellyfin found on common addresses — enter URL manually", "error");
+      }
+    } catch (e) {
+      toast("Auto-detect failed: " + e.message, "error");
+    }
+  }
+
+  if (action === "jellyfinConnect") {
+    openJellyfinDialog();
+  }
+
+  // ── Lidarr ──
+  if (action === "lidarrAutoDetect") {
+    toast("Scanning for Lidarr…");
+    try {
+      const res = await api.get("/api/discover/services");
+      if (res.lidarr && res.lidarr.length > 0) {
+        const url = res.lidarr[0];
+        const el = document.getElementById("LIDARR_URL");
+        if (el) el.value = url;
+        toast("Found Lidarr at " + url);
+      } else {
+        toast("No Lidarr found on common addresses — enter URL manually", "error");
+      }
+    } catch (e) {
+      toast("Auto-detect failed: " + e.message, "error");
+    }
+  }
+
+  if (action === "lidarrOpenSettings") {
+    const urlEl = document.getElementById("LIDARR_URL");
+    const base = (urlEl && urlEl.value.trim()) || "";
+    if (!base) {
+      toast("Enter (or auto-detect) the Lidarr URL first", "error");
+      return;
+    }
+    window.open(base.replace(/\/$/, "") + "/settings/general", "_blank", "noopener");
+  }
+
+  if (action === "lidarrValidate") {
+    const urlEl    = document.getElementById("LIDARR_URL");
+    const keyEl    = document.getElementById("LIDARR_API_KEY");
+    const url      = (urlEl && urlEl.value.trim()) || "";
+    const api_key  = (keyEl && keyEl.value.trim()) || "";
+    if (!url || !api_key) {
+      toast("Enter URL and API key first", "error");
+      return;
+    }
+    try {
+      const res = await api.post("/api/discover/lidarr/validate", { url, api_key });
+      toast("Lidarr ✅ — version " + res.version + " (" + res.branch + ")");
+    } catch (e) {
+      toast("Lidarr validation failed: " + e.message, "error");
+    }
+  }
 }
+
+// ── Load / save / render ──────────────────────────────────────────────────
 
 async function load() {
   try {
-    var data = await api.get("/api/settings");
+    const data = await api.get("/api/settings");
     originalValues = JSON.parse(JSON.stringify(data.settings));
     render(data.settings);
     refreshSpotifyStatus();
@@ -284,7 +519,7 @@ function render(settings) {
   containerRef.appendChild(h("p", { style: { color: "var(--text-dim)" } },
     "Configure credentials and runtime options. Environment variables take priority over saved values."));
 
-  SECTIONS.forEach(function(section) {
+  SECTIONS.forEach(section => {
     containerRef.appendChild(sectionHTML(section, settings));
   });
 
@@ -296,7 +531,7 @@ function render(settings) {
 }
 
 async function save() {
-  var updates = collectUpdates();
+  const updates = collectUpdates();
   try {
     await api.put("/api/settings", updates);
     toast("Settings saved");
@@ -307,8 +542,7 @@ async function save() {
 }
 
 async function saveAndTest() {
-  var updates = collectUpdates();
-
+  const updates = collectUpdates();
   try {
     await api.put("/api/settings", updates);
     toast("Settings saved, testing...");
@@ -317,36 +551,27 @@ async function saveAndTest() {
     return;
   }
 
-  // Test all integrations
   try {
-    var status = await api.get("/api/setup/status");
-    var sections = [];
-    var pass = 0;
-    var fail = 0;
-    var items = [
-      { name: "Spotify", s: status.spotify },
+    const status = await api.get("/api/setup/status");
+    const items = [
+      { name: "Spotify",  s: status.spotify },
       { name: "Jellyfin", s: status.jellyfin },
-      { name: "Lidarr", s: status.lidarr },
+      { name: "Lidarr",   s: status.lidarr },
     ];
     if (status.listenbrainz) items.push({ name: "ListenBrainz", s: status.listenbrainz });
-    if (status.lastfm) items.push({ name: "Last.fm", s: status.lastfm });
+    if (status.lastfm)       items.push({ name: "Last.fm",      s: status.lastfm });
 
-    items.forEach(function(item) {
-      if (item.s.configured && item.s.reachable) {
-        sections.push(item.name + ": OK (" + (item.s.latency_ms || "?") + "ms)");
-        pass++;
-      } else if (item.s.configured && !item.s.reachable) {
-        sections.push(item.name + ": CONFIGURED but unreachable -- " + (item.s.error || "no detail"));
-        fail++;
-      } else {
-        sections.push(item.name + ": not configured");
-      }
+    let pass = 0, fail = 0;
+    const sections = items.map(item => {
+      if (item.s.configured && item.s.reachable)  { pass++; return item.name + ": OK (" + (item.s.latency_ms || "?") + "ms)"; }
+      if (item.s.configured && !item.s.reachable) { fail++; return item.name + ": FAIL — " + (item.s.error || "no detail"); }
+      return item.name + ": not configured";
     });
 
     if (fail > 0) {
-      toast("Test All: " + pass + " OK, " + fail + " FAILED -- " + sections.join(" | "), "error");
+      toast("Test: " + pass + " OK, " + fail + " FAILED — " + sections.join(" | "), "error");
     } else {
-      toast("Test All: " + pass + " OK -- " + sections.join(" | "));
+      toast("Test: " + pass + " OK — " + sections.join(" | "));
     }
   } catch (e) {
     toast("Test failed: " + e.message, "error");
@@ -354,10 +579,10 @@ async function saveAndTest() {
 }
 
 function collectUpdates() {
-  var updates = {};
-  SECTIONS.forEach(function(section) {
-    section.fields.forEach(function(f) {
-      var el = document.getElementById(f.key);
+  const updates = {};
+  SECTIONS.forEach(section => {
+    section.fields.forEach(f => {
+      const el = document.getElementById(f.key);
       if (!el) return;
       if (f.type === "checkbox") {
         updates[f.key] = el.checked ? "true" : "false";
@@ -373,7 +598,7 @@ function collectUpdates() {
 export default {
   async mount(container) {
     containerRef = container;
-    container.appendChild(h("div.empty", "Loading..."));
+    container.appendChild(h("div.empty", "Loading…"));
     await load();
   },
   unmount() {
@@ -381,5 +606,7 @@ export default {
       clearInterval(_spotifyPollTimer);
       _spotifyPollTimer = null;
     }
+    // Clean up any open dialogs
+    document.querySelectorAll("dialog[open]").forEach(d => d.close());
   },
 };
