@@ -1,8 +1,8 @@
 <CommunityApplications>
   <Profile>
-    Octave is a self-hosted Spotify to Jellyfin playlist sync tool with Lidarr request support, optional ListenBrainz/Last.fm enrichment, and a browser-based setup UI.
+    Octave syncs Spotify playlists into Jellyfin, auto-requests missing albums in Lidarr, and enriches matching with ListenBrainz and Last.fm. Browser-based setup with automatic credential discovery — no config files needed.
   </Profile>
-  <Icon>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/docs/logo.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/docs/logo.png</Icon>
   <WebPage>https://github.com/jackohagan94-afk/octave</WebPage>
   <Forum>https://github.com/jackohagan94-afk/octave/issues</Forum>
 </CommunityApplications>

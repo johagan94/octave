@@ -7,43 +7,126 @@
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
   <WebUI>http://[IP]:[PORT:8000]</WebUI>
-  <Icon>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/docs/logo.svg</Icon>
-  <Overview>Sync Spotify playlists into Jellyfin, request missing albums in Lidarr, and enrich matching with ListenBrainz and Last.fm.</Overview>
-  <Description>Octave keeps Spotify playlists mirrored into Jellyfin with per-playlist sync modes, cover art, missing-track reports, and optional Lidarr album requests. Spotify authentication uses PKCE; create your own Spotify app and enter its Client ID in Settings or in this template.</Description>
+  <Icon>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/docs/logo.png</Icon>
+  <Overview>Sync Spotify playlists into Jellyfin, request missing albums in Lidarr, and enrich matching with ListenBrainz and Last.fm. Browser-based setup — no config file editing needed.</Overview>
+  <Description>
+Octave keeps your Spotify playlists mirrored into Jellyfin with three sync modes (add-only, full-sync, rebuild), automatic cover art, missing-track reports, and optional Lidarr album requests.
+
+[b]Key features:[/b]
+[ul]
+[li]Spotify PKCE OAuth — connect via the web UI, no developer account required[/li]
+[li]Fuzzy track matching with configurable threshold[/li]
+[li]Parallel Lidarr album requests with per-artist state machine[/li]
+[li]ListenBrainz MusicBrainz ID resolution and Last.fm enrichment[/li]
+[li]Scheduled sync via cron, plus manual trigger from the dashboard[/li]
+[li]SQLite sync history, SSE log tail, missing tracks CSV export[/li]
+[li]HTTP Basic Auth for the web interface[/li]
+[li]All credentials configurable from the UI — no .env file required[/li]
+[/ul]
+
+[b]Setup:[/b] After starting the container, open the web UI, go to Settings, click [b]Sign in to Jellyfin[/b] and [b]Auto-detect URL[/b] to configure credentials automatically. Then click [b]Connect Spotify[/b] to authorize. See the README for full setup instructions.
+  </Description>
   <Support>https://github.com/jackohagan94-afk/octave/issues</Support>
   <Project>https://github.com/jackohagan94-afk/octave</Project>
   <ReadMe>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/README.md</ReadMe>
   <Category>MediaApp:Music MediaServer:Music Tools:Utilities</Category>
   <TemplateURL>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/templates/octave.xml</TemplateURL>
   <License>MIT</License>
+  <ExtraSearchTerms>spotify jellyfin lidarr sync playlist music listenbrainz lastfm</ExtraSearchTerms>
 
-  <Config Name="Web UI" Target="8000" Default="8000" Mode="tcp" Description="Octave web interface." Type="Port" Display="always" Required="true" Mask="false">8000</Config>
-  <Config Name="Spotify OAuth Callback" Target="8888" Default="8888" Mode="tcp" Description="Temporary PKCE OAuth callback listener. Add http://SERVER-IP:8888/callback or your reverse-proxy callback URL to your Spotify app redirect URIs." Type="Port" Display="always" Required="true" Mask="false">8888</Config>
+  <!-- Ports -->
+  <Config Name="Web UI Port" Target="8000" Default="8000" Mode="tcp"
+    Description="Octave web interface and API."
+    Type="Port" Display="always" Required="true" Mask="false">8000</Config>
 
-  <Config Name="Config Path" Target="/app/config" Default="/mnt/user/appdata/octave/config" Mode="rw" Description="Non-secret Octave config volume." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/octave/config</Config>
-  <Config Name="Data Path" Target="/app/data" Default="/mnt/user/appdata/octave/data" Mode="rw" Description="Runtime data, SQLite history, settings, and Spotify PKCE token cache." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/octave/data</Config>
-  <Config Name="Logs Path" Target="/app/logs" Default="/mnt/user/appdata/octave/logs" Mode="rw" Description="Octave log files." Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/octave/logs</Config>
+  <Config Name="Spotify OAuth Callback Port" Target="8888" Default="8888" Mode="tcp"
+    Description="Temporary PKCE OAuth callback listener. Used only during Spotify login — can be removed after first auth if not using a reverse proxy. Add http://[SERVER-IP]:8888/callback to your Spotify app redirect URIs, or set SPOTIFY_REDIRECT_URI to your reverse-proxy callback URL."
+    Type="Port" Display="always" Required="true" Mask="false">8888</Config>
 
-  <Config Name="Spotify Client ID" Target="SPOTIFY_CLIENT_ID" Default="" Description="Spotify app Client ID. Required for Spotify PKCE auth unless configured later in the Octave Settings UI." Type="Variable" Display="always" Required="false" Mask="false"></Config>
-  <Config Name="Spotify Redirect URI" Target="SPOTIFY_REDIRECT_URI" Default="" Description="Optional explicit Spotify callback URI. Leave blank to let Octave infer it, or set your reverse-proxy callback such as https://octave.example.com/callback." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <!-- Volumes -->
+  <Config Name="Config Path" Target="/app/config" Default="/mnt/user/appdata/octave/config" Mode="rw"
+    Description="Stores config.json (non-secret settings: Jellyfin library ID, playlists list)."
+    Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/octave/config</Config>
 
-  <Config Name="Jellyfin URL" Target="JELLYFIN_URL" Default="" Description="Jellyfin URL reachable from the Octave container, for example http://192.168.1.10:8096." Type="Variable" Display="always" Required="false" Mask="false"></Config>
-  <Config Name="Jellyfin API Key" Target="JELLYFIN_API_KEY" Default="" Description="Jellyfin API key. Can also be configured in Octave Settings." Type="Variable" Display="always" Required="false" Mask="true"></Config>
-  <Config Name="Jellyfin User ID" Target="JELLYFIN_USER_ID" Default="" Description="Jellyfin user ID that owns created playlists." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Data Path" Target="/app/data" Default="/mnt/user/appdata/octave/data" Mode="rw"
+    Description="Runtime data: SQLite sync history, credentials (settings.json), Spotify PKCE token, track cache."
+    Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/octave/data</Config>
 
-  <Config Name="Lidarr URL" Target="LIDARR_URL" Default="" Description="Optional Lidarr URL reachable from the Octave container." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="Lidarr API Key" Target="LIDARR_API_KEY" Default="" Description="Optional Lidarr API key for requesting missing albums." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="Logs Path" Target="/app/logs" Default="/mnt/user/appdata/octave/logs" Mode="rw"
+    Description="Octave log files (rotated automatically)."
+    Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/octave/logs</Config>
 
-  <Config Name="Auth Username" Target="AUTH_USERNAME" Default="octave" Description="HTTP Basic Auth username." Type="Variable" Display="advanced" Required="false" Mask="false">octave</Config>
-  <Config Name="Auth Password" Target="AUTH_PASSWORD" Default="" Description="HTTP Basic Auth password. Leave blank for LAN-trust mode; set before exposing Octave outside your LAN." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <!-- Spotify — optional here, can be set in UI -->
+  <Config Name="Spotify Client ID" Target="SPOTIFY_CLIENT_ID" Default=""
+    Description="Optional — can be set later in the Octave Settings UI. Your Spotify app Client ID from developer.spotify.com/dashboard. Leave blank if you plan to use the bundled app (if shipped) or configure later."
+    Type="Variable" Display="always" Required="false" Mask="false"></Config>
 
-  <Config Name="Sync Schedule" Target="SYNC_SCHEDULE" Default="0 2 * * *" Description="Cron schedule for automatic sync. Empty disables scheduled sync." Type="Variable" Display="advanced" Required="false" Mask="false">0 2 * * *</Config>
-  <Config Name="Sync On Startup" Target="SYNC_ON_STARTUP" Default="false" Description="Run a sync when the container starts." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
-  <Config Name="Sync All Playlists" Target="SYNC_ALL_PLAYLISTS" Default="" Description="Set true to discover and sync all Spotify playlists visible to the connected account." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="Timezone" Target="TZ" Default="UTC" Description="IANA timezone for logs and scheduled syncs." Type="Variable" Display="advanced" Required="false" Mask="false">UTC</Config>
-  <Config Name="Log Level" Target="LOG_LEVEL" Default="INFO" Description="Python logging level." Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
+  <Config Name="Spotify Redirect URI" Target="SPOTIFY_REDIRECT_URI" Default=""
+    Description="Optional. Leave blank to let Octave infer the callback URI. Set this explicitly when using a reverse proxy, e.g. https://octave.example.com/callback."
+    Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
-  <Config Name="ListenBrainz Token" Target="LISTENBRAINZ_TOKEN" Default="" Description="Optional ListenBrainz user token." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
-  <Config Name="Last.fm API Key" Target="LASTFM_API_KEY" Default="" Description="Optional Last.fm API key." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
-  <Config Name="Last.fm Username" Target="LASTFM_USERNAME" Default="" Description="Optional Last.fm username for scrobble import workflows." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <!-- Jellyfin — optional here, can be set via Sign-in UI -->
+  <Config Name="Jellyfin URL" Target="JELLYFIN_URL" Default=""
+    Description="Optional — use 'Sign in to Jellyfin' in the Settings UI to configure automatically. URL reachable from the Octave container, e.g. http://192.168.1.10:8096 or http://jellyfin:8096."
+    Type="Variable" Display="always" Required="false" Mask="false"></Config>
+
+  <Config Name="Jellyfin API Key" Target="JELLYFIN_API_KEY" Default=""
+    Description="Optional — auto-filled by 'Sign in to Jellyfin' in Settings. Jellyfin Dashboard → API Keys."
+    Type="Variable" Display="always" Required="false" Mask="true"></Config>
+
+  <Config Name="Jellyfin User ID" Target="JELLYFIN_USER_ID" Default=""
+    Description="Optional — auto-filled by 'Sign in to Jellyfin' in Settings. The user ID that will own created playlists."
+    Type="Variable" Display="always" Required="false" Mask="false"></Config>
+
+  <!-- Lidarr — optional -->
+  <Config Name="Lidarr URL" Target="LIDARR_URL" Default=""
+    Description="Optional — leave unset to disable Lidarr integration. URL reachable from the Octave container, e.g. http://lidarr:8686."
+    Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="Lidarr API Key" Target="LIDARR_API_KEY" Default=""
+    Description="Optional Lidarr API key. Lidarr → Settings → General → Security → API Key."
+    Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <!-- Security -->
+  <Config Name="Auth Username" Target="AUTH_USERNAME" Default="octave"
+    Description="HTTP Basic Auth username for the web UI. Defaults to 'octave'."
+    Type="Variable" Display="advanced" Required="false" Mask="false">octave</Config>
+
+  <Config Name="Auth Password" Target="AUTH_PASSWORD" Default=""
+    Description="HTTP Basic Auth password. Leave blank for open access (LAN-trust mode). Set this before exposing Octave outside your LAN."
+    Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <!-- Runtime -->
+  <Config Name="Sync Schedule" Target="SYNC_SCHEDULE" Default="0 2 * * *"
+    Description="Cron schedule for automatic sync (uses container TZ). Default: 2:00 AM daily. Leave blank to disable scheduled sync."
+    Type="Variable" Display="advanced" Required="false" Mask="false">0 2 * * *</Config>
+
+  <Config Name="Sync On Startup" Target="SYNC_ON_STARTUP" Default="false"
+    Description="Set to 'true' to run a sync when the container starts."
+    Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+
+  <Config Name="Sync All Playlists" Target="SYNC_ALL_PLAYLISTS" Default=""
+    Description="Set to 'true' to discover and sync every Spotify playlist the connected account can see. Spotify-owned editorial playlists are skipped automatically."
+    Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="Timezone" Target="TZ" Default="UTC"
+    Description="IANA timezone string for logs and scheduled syncs, e.g. Australia/Sydney."
+    Type="Variable" Display="advanced" Required="false" Mask="false">UTC</Config>
+
+  <Config Name="Log Level" Target="LOG_LEVEL" Default="INFO"
+    Description="Python logging level: DEBUG, INFO, WARNING, or ERROR."
+    Type="Variable" Display="advanced" Required="false" Mask="false">INFO</Config>
+
+  <!-- Optional enrichment -->
+  <Config Name="ListenBrainz Token" Target="LISTENBRAINZ_TOKEN" Default=""
+    Description="Optional. ListenBrainz user token from listenbrainz.org/profile/ — enables MusicBrainz ID resolution for better Lidarr matching."
+    Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <Config Name="Last.fm API Key" Target="LASTFM_API_KEY" Default=""
+    Description="Optional. Last.fm API key from last.fm/api/account/create — enables playcounts and similar-artist discovery."
+    Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <Config Name="Last.fm Username" Target="LASTFM_USERNAME" Default=""
+    Description="Optional. Last.fm username for scrobble history lookups."
+    Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 </Container>
