@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jackohagan94-afk/octave/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/jackohagan94-afk/octave?style=flat-square"></a>
+  <a href="https://github.com/johagan94/octave/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/johagan94/octave?style=flat-square"></a>
 </p>
 
 ---
@@ -62,7 +62,7 @@ they appear. One container, local-first, with a web UI for setup.
 ### 1 — Clone and start
 
 ```bash
-git clone https://github.com/jackohagan94-afk/octave.git
+git clone https://github.com/johagan94/octave.git
 cd octave
 cp .env.example .env
 mkdir -p config data logs

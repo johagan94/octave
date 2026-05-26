@@ -1,20 +1,20 @@
 <Container version="2">
   <Name>Octave</Name>
-  <Repository>ghcr.io/jackohagan94-afk/octave:latest</Repository>
-  <Registry>https://github.com/jackohagan94-afk/octave/pkgs/container/octave</Registry>
+  <Repository>ghcr.io/johagan94/octave:latest</Repository>
+  <Registry>https://github.com/users/johagan94/packages/container/package/octave</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
   <WebUI>http://[IP]:[PORT:8000]</WebUI>
-  <Icon>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/docs/logo.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/johagan94/octave/main/docs/logo.png</Icon>
   <Overview>Sync Spotify playlists into Jellyfin, request missing albums in Lidarr, and enrich matching with ListenBrainz and Last.fm.</Overview>
   <Description>Octave keeps Spotify playlists mirrored into Jellyfin with per-playlist sync modes, cover art, missing-track reports, and optional Lidarr album requests. Spotify authentication uses PKCE; create your own Spotify app and enter its Client ID in Settings or in this template.</Description>
-  <Support>https://github.com/jackohagan94-afk/octave/issues</Support>
-  <Project>https://github.com/jackohagan94-afk/octave</Project>
-  <ReadMe>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/README.md</ReadMe>
+  <Support>https://github.com/johagan94/octave/issues</Support>
+  <Project>https://github.com/johagan94/octave</Project>
+  <ReadMe>https://raw.githubusercontent.com/johagan94/octave/main/README.md</ReadMe>
   <Category>MediaApp:Music MediaServer:Music Tools:Utilities</Category>
-  <TemplateURL>https://raw.githubusercontent.com/jackohagan94-afk/octave/main/templates/octave.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/johagan94/octave/main/templates/octave.xml</TemplateURL>
   <License>MIT</License>
 
   <Config Name="Web UI" Target="8000" Default="8000" Mode="tcp" Description="Octave web interface." Type="Port" Display="always" Required="true" Mask="false">8000</Config>
