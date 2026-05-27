@@ -266,6 +266,25 @@ def sync_playlist(
 
     waiting_track_ids = set(state.get("waiting_for_lidarr_tracks", {}).keys())
 
+    # Promote any waiting tracks that Lidarr has since downloaded into Jellyfin
+    if waiting_track_ids:
+        resolved: list[str] = []
+        for track in sp_tracks:
+            tid = track.get("id", "")
+            if tid not in waiting_track_ids:
+                continue
+            if jf.find_track(track["name"], primary_artist(track), tid):
+                resolved.append(tid)
+        if resolved:
+            with _state_lock:
+                for tid in resolved:
+                    state["waiting_for_lidarr_tracks"].pop(tid, None)
+            waiting_track_ids -= set(resolved)
+            log.info(
+                "  %d waiting track(s) now in Jellyfin library; removed from wait list",
+                len(resolved),
+            )
+
     # ── Match against Jellyfin ────────────────────────────────────────────
     matched_ids: list[str] = []
     missing: list[dict] = []
@@ -277,7 +296,7 @@ def sync_playlist(
             artist = primary_artist(track)
             spotify_track_id = track.get("id", "")
 
-            # Check if this track is waiting for Lidarr to download
+            # Check if this track is still waiting for Lidarr to download
             if spotify_track_id in waiting_track_ids:
                 waiting_lidarr.append(spotify_track_id)
                 continue

@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger(__name__)
 
-DEFAULT_CACHE_PATH = Path("data/jellyfin_track_cache.json")
+DEFAULT_CACHE_PATH = Path(os.environ.get("SYNC_DATA_DIR", "data")) / "jellyfin_track_cache.json"
 
 
 class TrackCache:

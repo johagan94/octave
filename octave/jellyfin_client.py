@@ -3,6 +3,8 @@ cover art upload, persistent library index, and track-link cache integration."""
 
 import json
 import logging
+import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -13,7 +15,11 @@ from .matcher import normalise, track_score
 
 log = logging.getLogger(__name__)
 
-INDEX_CACHE_PATH = Path("data/jellyfin_library_index.json")
+_LIBRARY_CACHE_TTL_SECONDS = int(os.environ.get("LIBRARY_CACHE_TTL_HOURS", "1")) * 3600
+
+
+def _index_cache_path() -> Path:
+    return Path(os.environ.get("SYNC_DATA_DIR", "data")) / "jellyfin_library_index.json"
 
 
 class JellyfinClient:
@@ -103,7 +109,7 @@ class JellyfinClient:
         for item in items:
             title = normalise(item.get("Name", ""))
             for artist in item.get("Artists", []):
-                self._exact_index[f"{normalise(artist)}|{title}"] = item
+                self._exact_index.setdefault(f"{normalise(artist)}|{title}", item)
             aa = item.get("AlbumArtist", "")
             if aa:
                 self._exact_index.setdefault(f"{normalise(aa)}|{title}", item)
@@ -116,9 +122,11 @@ class JellyfinClient:
 
     def _save_persistent_index(self) -> None:
         """Persist the library index to disk for warm starts."""
+        cache_path = _index_cache_path()
         try:
-            INDEX_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
             payload = {
+                "saved_at": time.time(),
                 "items": [
                     {
                         "Id": i.get("Id"),
@@ -130,32 +138,45 @@ class JellyfinClient:
                     for i in (self._library_cache or [])
                 ],
             }
-            INDEX_CACHE_PATH.with_suffix(".tmp").write_text(json.dumps(payload))
-            INDEX_CACHE_PATH.with_suffix(".tmp").replace(INDEX_CACHE_PATH)
+            tmp = cache_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(payload))
+            tmp.replace(cache_path)
         except OSError as exc:
             log.debug("Failed to persist library index: %s", exc)
 
     def _load_persistent_index(self) -> bool:
-        """Load a previously-saved library index. Returns True on success."""
-        if not INDEX_CACHE_PATH.exists():
+        """Load a previously-saved library index. Returns True on success.
+
+        Returns False (triggering a live rebuild) if the cache is missing,
+        empty, corrupt, or older than LIBRARY_CACHE_TTL_HOURS (default 1h).
+        """
+        cache_path = _index_cache_path()
+        if not cache_path.exists():
             return False
         try:
-            data = json.loads(INDEX_CACHE_PATH.read_text())
+            data = json.loads(cache_path.read_text())
             items = data.get("items", [])
             if not items:
+                return False
+            age = time.time() - data.get("saved_at", 0)
+            if age > _LIBRARY_CACHE_TTL_SECONDS:
+                log.info(
+                    "  Library index cache expired (age=%.0fs > TTL=%ds); rebuilding from Jellyfin",
+                    age, _LIBRARY_CACHE_TTL_SECONDS,
+                )
                 return False
             self._library_cache = items
             self._exact_index = {}
             for item in items:
                 title = normalise(item.get("Name", ""))
                 for artist in item.get("Artists", []):
-                    self._exact_index[f"{normalise(artist)}|{title}"] = item
+                    self._exact_index.setdefault(f"{normalise(artist)}|{title}", item)
                 aa = item.get("AlbumArtist", "")
                 if aa:
                     self._exact_index.setdefault(f"{normalise(aa)}|{title}", item)
             log.info(
-                "  Library loaded from disk: %d tracks, %d index keys",
-                len(items), len(self._exact_index),
+                "  Library loaded from disk: %d tracks, %d index keys (age=%.0fs)",
+                len(items), len(self._exact_index), age,
             )
             return True
         except (json.JSONDecodeError, KeyError, OSError) as exc:
