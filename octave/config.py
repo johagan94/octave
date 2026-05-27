@@ -6,7 +6,6 @@ fallback to the persistent settings.json store managed by the web UI.
 import json
 import logging
 import os
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv

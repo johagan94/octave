@@ -8,7 +8,6 @@ Two routers:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -21,7 +20,6 @@ from fastapi.staticfiles import StaticFiles
 from ..logging_setup import configure_logging
 from . import db
 from .auth import require_auth
-from .envelope import err
 from .models import ApiError, ApiResponse
 from .routes import config as config_route
 from .routes import health, logs, playlists, setup

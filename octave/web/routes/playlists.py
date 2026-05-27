@@ -56,12 +56,6 @@ def _enrich_playlist(entry: dict) -> PlaylistEntry:
             import spotipy
             from spotipy.oauth2 import SpotifyOAuth
 
-            sp_cfg = {}
-            cfg_path = config_path()
-            if cfg_path.exists():
-                with cfg_path.open() as fh:
-                    sp_cfg = json.load(fh).get("spotify", {})
-
             sp = None
 
             # Preferred: PKCE token (no client secret needed)
