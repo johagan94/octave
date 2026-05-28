@@ -9,7 +9,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}   # e.g. ghcr.io/jackohagan94-afk/octave
+  IMAGE_NAME: ${{ github.repository }}   # e.g. ghcr.io/johagan94/octave
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
