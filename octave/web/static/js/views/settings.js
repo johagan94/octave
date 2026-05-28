@@ -72,6 +72,14 @@ const SECTIONS = [
     ],
   },
   {
+    title: "Access",
+    description: "How Octave is reached from outside the local network.",
+    help: "External URL: the publicly-reachable address for this Octave instance (e.g. your Tailscale hostname or a reverse-proxy URL). Used by the Subsonic API to advertise the correct server URL to music clients, and as the base for shareable links. Leave blank to fall back to the request origin.",
+    fields: [
+      { key: "OCTAVE_EXTERNAL_URL", label: "External / Tailscale URL", type: "url", required: false, placeholder: "https://octave.johagan.au" },
+    ],
+  },
+  {
     title: "Security",
     description: "HTTP Basic Auth for the web interface.",
     help: "Set a password to protect Octave with HTTP Basic Auth. The browser handles the login prompt natively. Leave Password blank for open access (LAN-trust mode). Username defaults to 'octave' if left blank.",

@@ -31,6 +31,7 @@ SECRET_KEYS = [
     "LASTFM_API_KEY",
     "AUTH_USERNAME",
     "AUTH_PASSWORD",
+    "SUBSONIC_PASSWORD",
 ]
 
 # Non-secret runtime knobs that can also be tweaked from the UI.
@@ -42,6 +43,8 @@ KNOB_KEYS = [
     "LOG_LEVEL",
     "TZ",
     "WEB_PORT",
+    "OCTAVE_EXTERNAL_URL",
+    "SUBSONIC_USERNAME",
 ]
 
 ALL_KEYS = SECRET_KEYS + KNOB_KEYS

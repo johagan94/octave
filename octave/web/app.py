@@ -27,6 +27,7 @@ from .routes import sync as sync_route
 from .routes import settings as settings_route
 from .routes import spotify_auth as spotify_auth_route
 from .routes import discover as discover_route
+from .routes import subsonic as subsonic_route
 from .runner import runner
 
 log = logging.getLogger(__name__)
@@ -141,6 +142,11 @@ def create_app() -> FastAPI:
                                           message=str(exc)))
         return JSONResponse(status_code=500,
                             content=body.model_dump(exclude_none=True))
+
+    # /rest/* -- Subsonic/OpenSubsonic API (no Octave auth — Subsonic handles its own)
+    subsonic_router = APIRouter(prefix="/rest")
+    subsonic_router.include_router(subsonic_route.router)
+    app.include_router(subsonic_router)
 
     # /api/health -- no auth, used by Docker healthcheck
     public_router = APIRouter(prefix="/api")
