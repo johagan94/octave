@@ -73,10 +73,12 @@ const SECTIONS = [
   },
   {
     title: "Access",
-    description: "How Octave is reached from outside the local network.",
-    help: "External URL: the publicly-reachable address for this Octave instance (e.g. your Tailscale hostname or a reverse-proxy URL). Used by the Subsonic API to advertise the correct server URL to music clients, and as the base for shareable links. Leave blank to fall back to the request origin.",
+    description: "External access and Subsonic/OpenSubsonic client credentials.",
+    help: "External URL: the publicly-reachable address for this Octave instance (e.g. your Tailscale hostname or a reverse-proxy URL). Used by the Subsonic API to advertise the correct server URL to music clients and as the base for shareable links — leave blank to fall back to the request origin.\n\nSubsonic credentials are used by OpenSubsonic clients (Amperfy, SubStreamer, etc.). The Subsonic password is stored separately from your Jellyfin password because the Subsonic protocol requires the server to verify a one-way token against a plaintext credential. Username defaults to your Jellyfin AUTH_USERNAME if left blank.",
     fields: [
-      { key: "OCTAVE_EXTERNAL_URL", label: "External / Tailscale URL", type: "url", required: false, placeholder: "https://octave.johagan.au" },
+      { key: "OCTAVE_EXTERNAL_URL", label: "External / Tailscale URL", type: "url", required: false, placeholder: "https://octave.example.com" },
+      { key: "SUBSONIC_USERNAME", label: "Subsonic Username", type: "text", required: false, placeholder: "same as Jellyfin username" },
+      { key: "SUBSONIC_PASSWORD", label: "Subsonic Password", type: "password", required: false },
     ],
   },
   {

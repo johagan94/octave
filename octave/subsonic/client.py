@@ -28,6 +28,12 @@ _user_token_cache: dict[str, tuple[str, float]] = {}
 _token_lock = asyncio.Lock()
 _TOKEN_TTL = 3600 * 6  # 6 hours
 
+# Artist-stats cache keyed by (base_url, user_id): (data, expires_at)
+# Avoids re-running the expensive track-scan on every getArtists call.
+_artist_stats_cache: dict[tuple, tuple[dict, float]] = {}
+_artist_stats_lock = asyncio.Lock()
+_ARTIST_STATS_TTL = 1800  # 30 minutes
+
 
 class JellyfinClient:
     def __init__(self, base_url: str, api_key: str, user_id: str):
@@ -167,38 +173,70 @@ class JellyfinClient:
         ]
 
     async def get_artists(self) -> dict:
-        # Jellyfin's bulk AlbumArtists endpoint never populates ChildCount/AlbumCount,
-        # so we run a parallel album query and build a count map ourselves.
+        """Return all album artists with album counts pre-computed.
+
+        Jellyfin's bulk AlbumArtists endpoint never populates ChildCount/AlbumCount
+        regardless of which Fields are requested.  We compute it ourselves using the
+        same strategy Navidrome uses: scan all tracks for (ArtistId, AlbumId) pairs,
+        group by artist, and count unique album IDs.  This works for both properly-
+        tagged libraries (where AlbumArtistIds is set) and flat-folder imports where
+        album items have empty AlbumArtists but tracks still carry the correct artist.
+
+        Results are cached for 30 minutes to avoid redundant queries on every client
+        poll (Amperfy refreshes the artist index on every app foreground).
+        """
+        cache_key = (self.base_url, self.user_id)
+        async with _artist_stats_lock:
+            cached = _artist_stats_cache.get(cache_key)
+            if cached and time.time() < cached[1]:
+                return cached[0]
+
+        # Run artists + all-tracks-with-album-ids queries in parallel
         artists_task = self.get(
             "/Artists/AlbumArtists",
             UserId=self.user_id,
             Recursive=True,
             SortBy="SortName",
             SortOrder="Ascending",
-            Fields="ItemCounts,PrimaryImageAspectRatio,BasicSyncInfo,UserData",
+            Fields="PrimaryImageAspectRatio,BasicSyncInfo,UserData",
             Limit=10000,
         )
-        albums_task = self.get(
+        # Fetch every track's ArtistItems + AlbumId — this is the Navidrome approach:
+        # group unique album IDs per artist from the track-level artist relationship.
+        # Much more reliable than album.ArtistItems which is often empty for flat-folder
+        # imports.  The Fields list is minimal to keep the response small.
+        # NOTE: Jellyfin returns artist IDs via ArtistItems (list of {Name, Id} objects),
+        # NOT a flat ArtistIds list — use ArtistItems in both the Fields request and
+        # the extraction loop below.
+        tracks_task = self.get(
             "/Items",
             UserId=self.user_id,
-            IncludeItemTypes="MusicAlbum",
+            IncludeItemTypes="Audio",
             Recursive=True,
-            Fields="ArtistItems,ChildCount",
-            Limit=50000,
+            Fields="ArtistItems,AlbumId",
+            Limit=100000,
         )
-        artists_data, albums_data = await asyncio.gather(artists_task, albums_task)
+        artists_data, tracks_data = await asyncio.gather(artists_task, tracks_task)
 
-        # Build artist_id → album_count map from album ArtistItems
-        album_counts: dict[str, int] = {}
-        for album in albums_data.get("Items", []):
-            for a in album.get("ArtistItems", []):
-                aid = a.get("Id")
+        # Build artist_id → set(album_ids) from all tracks
+        artist_albums: dict[str, set] = {}
+        for track in tracks_data.get("Items", []):
+            album_id = track.get("AlbumId")
+            if not album_id:
+                continue
+            for artist_item in track.get("ArtistItems", []):
+                aid = artist_item.get("Id")
                 if aid:
-                    album_counts[aid] = album_counts.get(aid, 0) + 1
+                    if aid not in artist_albums:
+                        artist_albums[aid] = set()
+                    artist_albums[aid].add(album_id)
 
-        # Inject album_count back onto artist items
+        # Inject album count back onto artist items
         for artist in artists_data.get("Items", []):
-            artist["_AlbumCount"] = album_counts.get(artist["Id"], 0)
+            artist["_AlbumCount"] = len(artist_albums.get(artist["Id"], set()))
+
+        async with _artist_stats_lock:
+            _artist_stats_cache[cache_key] = (artists_data, time.time() + _ARTIST_STATS_TTL)
 
         return artists_data
 
@@ -486,6 +524,41 @@ class JellyfinClient:
             Fields="BasicSyncInfo,UserData,MediaSources,MediaStreams",
         )
         return data.get("Items", [])
+
+    async def get_now_playing(self) -> list[dict]:
+        """Return active Jellyfin sessions that are currently playing audio."""
+        try:
+            sessions = await self.get("/Sessions", ActiveWithinSeconds=600)
+        except Exception:
+            return []
+        playing = []
+        for s in sessions:
+            np = s.get("NowPlayingItem")
+            if not np or np.get("MediaType") != "Audio":
+                continue
+            # Map Jellyfin session state to a nowPlayingEntry-compatible dict
+            play_state = s.get("PlayState") or {}
+            position_ticks = play_state.get("PositionTicks") or 0
+            minutes_ago = 0  # sessions are "active within 600s"; use 0 as approximation
+            last_activity = s.get("LastActivityDate")
+            if last_activity:
+                import datetime as _dt
+                try:
+                    ts = _dt.datetime.fromisoformat(last_activity.rstrip("Z"))
+                    delta = (_dt.datetime.utcnow() - ts).total_seconds()
+                    minutes_ago = max(0, int(delta // 60))
+                except Exception:
+                    pass
+            playing.append({
+                "_session": s,
+                "_item": np,
+                "_position_ticks": position_ticks,
+                "_minutes_ago": minutes_ago,
+                "_username": s.get("UserName", ""),
+                "_player_name": s.get("Client", "Unknown"),
+                "_player_id": s.get("Id", ""),
+            })
+        return playing
 
 
 # ── content-type fix ──────────────────────────────────────────────────────────

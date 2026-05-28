@@ -250,8 +250,21 @@ async def _handle(action: str, params: dict, fmt: str, jf: JellyfinClient, reque
         return _resp.ok(fmt, {"topSongs": {"song": [_map.song(s) for s in songs]}})
 
     if action == "getNowPlaying":
-        # Jellyfin Sessions endpoint — return empty for now
-        return _resp.ok(fmt, {"nowPlaying": {}})
+        sessions = await jf.get_now_playing()
+        entries = []
+        for s in sessions:
+            item = s["_item"]
+            song_data = _map.song(item)
+            song_data["username"] = s["_username"]
+            song_data["minutesAgo"] = s["_minutes_ago"]
+            song_data["playerId"] = s["_player_id"]
+            song_data["playerName"] = s["_player_name"]
+            # Subsonic uses 0-based seconds from start; Jellyfin uses 100ns ticks
+            ticks = s["_position_ticks"]
+            if ticks:
+                song_data["minutesAgo"] = song_data.get("minutesAgo", 0)
+            entries.append(song_data)
+        return _resp.ok(fmt, {"nowPlaying": {"entry": entries} if entries else {}})
 
     # ── search ───────────────────────────────────────────────────────────────
     if action in ("search2", "search3"):
