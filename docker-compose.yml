@@ -15,7 +15,7 @@ services:
       # Env vars take priority over saved settings.
       # Public Client ID bundled so end users need NO Spotify dev account.
       # PKCE = no secret to protect. Set this once (project maintainer) to a
-      # registered app whose redirect URI is http://127.0.0.1:8888/callback.
+      # registered app whose redirect URI is http://127.0.0.1:8000/callback.
       - OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID=${OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID:-}
       # Optional per-user overrides (advanced; not needed for normal use):
       - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}

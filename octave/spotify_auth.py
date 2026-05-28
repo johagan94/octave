@@ -45,7 +45,7 @@ BUNDLED_CLIENT_ID = (
     os.environ.get("OCTAVE_BUNDLED_SPOTIFY_CLIENT_ID", "").strip()
 )
 
-DEFAULT_REDIRECT_URI = "http://127.0.0.1:8888/callback"
+DEFAULT_REDIRECT_URI = "http://127.0.0.1:8000/callback"
 
 # Abandoned auth attempts are pruned after this many seconds so the pending
 # map cannot grow without bound.

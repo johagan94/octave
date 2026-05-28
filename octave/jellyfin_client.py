@@ -220,18 +220,29 @@ class JellyfinClient:
             t_score = track_score(title, item.get("Name", ""))
             if t_score < 75:
                 continue
-            a_score = track_score(artist, " ".join(item.get("Artists", [])))
+            # Use Artists list; fall back to AlbumArtist if list is empty
+            # (Jellyfin sometimes populates only AlbumArtist, not Artists)
+            item_artists = item.get("Artists") or []
+            artist_str = " ".join(a for a in item_artists if a) or item.get("AlbumArtist", "")
+            a_score = track_score(artist, artist_str)
             if a_score < 65:
                 continue
             combined = t_score * 0.65 + a_score * 0.35
             if combined > best_score:
                 best_score = combined
                 best_item = item
+                if best_score >= 95:
+                    break
 
         if best_score >= self.match_threshold:
             if spotify_id and self._track_cache and best_item:
                 self._track_cache.set(spotify_id, best_item["Id"])
             return best_item
+        if best_score > 0:
+            log.debug(
+                "  No fuzzy match for %r / %r (best %.1f < threshold %d)",
+                title, artist, best_score, self.match_threshold,
+            )
         return None
 
     def get_cache_stats(self) -> dict:

@@ -26,6 +26,7 @@ from .routes import health, logs, playlists, setup
 from .routes import sync as sync_route
 from .routes import settings as settings_route
 from .routes import spotify_auth as spotify_auth_route
+from .routes.spotify_auth import callback_router as _spotify_callback_router
 from .routes import discover as discover_route
 from .routes import subsonic as subsonic_route
 from .runner import runner
@@ -164,6 +165,10 @@ def create_app() -> FastAPI:
     api_router.include_router(spotify_auth_route.router)
     api_router.include_router(discover_route.router)
     app.include_router(api_router)
+
+    # Spotify OAuth callback -- root-level, no auth, must be before StaticFiles
+    # so FastAPI intercepts /callback?code=...&state=... before the SPA does.
+    app.include_router(_spotify_callback_router)
 
     # Frontend SPA -- serve index.html + JS + CSS at /
     static_dir = Path(__file__).parent / "static"
