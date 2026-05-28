@@ -7,12 +7,30 @@
       <stop offset="0.48" stop-color="#14b8a6"/>
       <stop offset="1" stop-color="#38bdf8"/>
     </linearGradient>
+    <style>
+      /* Each bar scales from its own bottom edge so it pulses like an
+         equalizer. Staggered durations/delays keep the motion organic.
+         Honours the OS "reduce motion" setting (also when used in &lt;img&gt;). */
+      .bar { transform-box: fill-box; transform-origin: 50% 100%; }
+      @media (prefers-reduced-motion: no-preference) {
+        .bar { animation: eq 1.3s ease-in-out infinite; }
+        .b1 { animation-duration: 1.10s; animation-delay: -0.20s; }
+        .b2 { animation-duration: 1.50s; animation-delay: -0.55s; }
+        .b3 { animation-duration: 1.30s; animation-delay: -0.10s; }
+        .b4 { animation-duration: 1.25s; animation-delay: -0.70s; }
+        .b5 { animation-duration: 1.45s; animation-delay: -0.35s; }
+      }
+      @keyframes eq {
+        0%, 100% { transform: scaleY(1); }
+        50%      { transform: scaleY(0.6); }
+      }
+    </style>
   </defs>
   <rect width="200" height="200" rx="36" fill="#101216"/>
-  <rect x="31" y="72" width="18" height="72" rx="9" fill="url(#bar)" opacity="0.62"/>
-  <rect x="61" y="46" width="18" height="108" rx="9" fill="url(#bar)" opacity="0.8"/>
-  <rect x="91" y="28" width="18" height="144" rx="9" fill="url(#bar)"/>
-  <rect x="121" y="56" width="18" height="98" rx="9" fill="url(#bar)" opacity="0.86"/>
-  <rect x="151" y="78" width="18" height="66" rx="9" fill="url(#bar)" opacity="0.68"/>
+  <rect class="bar b1" x="31"  y="72" width="18" height="72"  rx="9" fill="url(#bar)" opacity="0.62"/>
+  <rect class="bar b2" x="61"  y="46" width="18" height="108" rx="9" fill="url(#bar)" opacity="0.8"/>
+  <rect class="bar b3" x="91"  y="28" width="18" height="144" rx="9" fill="url(#bar)"/>
+  <rect class="bar b4" x="121" y="56" width="18" height="98"  rx="9" fill="url(#bar)" opacity="0.86"/>
+  <rect class="bar b5" x="151" y="78" width="18" height="66"  rx="9" fill="url(#bar)" opacity="0.68"/>
   <circle cx="100" cy="100" r="57" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="8"/>
 </svg>

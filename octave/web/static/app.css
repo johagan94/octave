@@ -30,6 +30,15 @@
 
 * { box-sizing: border-box; }
 
+/* ── View transitions ───────────────────────────────────────────────── */
+/* Snappy cross-fade between routes (router.js gates this on
+   prefers-reduced-motion, so no need to disable it here). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+  animation-timing-function: ease;
+}
+
 html, body {
   margin: 0; padding: 0;
   background: var(--bg);
