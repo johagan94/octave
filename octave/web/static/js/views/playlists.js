@@ -1,5 +1,6 @@
 // Playlist CRUD: table + add form + sync_mode selector + bulk edit + delete.
-// Also shows last-sync stats per playlist and respects SYNC_ALL_PLAYLISTS mode.
+// Also: export/import (JSON), smart playlist generator, similar-artist discovery.
+// Respects SYNC_ALL_PLAYLISTS mode.
 
 import { api, ApiError } from "../api.js";
 import { h, fmtAge } from "../h.js";
@@ -114,6 +115,168 @@ async function onSyncOne(id, name) {
       toast(`Sync failed: ${e.message}`, "error");
     }
   }
+}
+
+function onExport(id, name) {
+  // Trigger a file download through a temporary anchor element.
+  const a = document.createElement("a");
+  a.href = `/api/playlists/export/${encodeURIComponent(id)}`;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function onImport(file) {
+  if (!file) return;
+  let body;
+  try {
+    body = JSON.parse(await file.text());
+  } catch (_) {
+    toast("Not a valid JSON file", "error");
+    return;
+  }
+  try {
+    const res = await api.post("/api/playlists/import", body);
+    toast(`Imported "${res.name}" — ${res.matched}/${res.total} tracks matched`
+      + (res.skipped > 0 ? ` (${res.skipped} skipped)` : ""));
+    refresh();
+  } catch (e) {
+    toast(`Import failed: ${e.message}`, "error");
+  }
+}
+
+// ── Generate modal ────────────────────────────────────────────────────────────
+
+const GEN_TYPES = [
+  { value: "genre",      label: "By genre",          hint: "Random tracks matching a genre tag" },
+  { value: "era",        label: "By era",             hint: "Random tracks from a year range" },
+  { value: "unplayed",   label: "Unplayed tracks",    hint: "Tracks you've never listened to" },
+  { value: "top_played", label: "Most played",        hint: "Your most-played tracks" },
+  { value: "similar",    label: "Similar to a track", hint: "Tracks similar to a seed track (Jellyfin ID)" },
+];
+
+function openGenerateModal() {
+  let typeEl, genreEl, fromYearEl, toYearEl, seedEl, nameEl, limitEl, paramsSection;
+
+  function updateParams() {
+    if (!paramsSection) return;
+    paramsSection.innerHTML = "";
+    const type = typeEl.value;
+    if (type === "genre") {
+      paramsSection.appendChild(h("div.field",
+        h("label", "Genre"), genreEl = h("input", { type: "text", placeholder: "Rock, Jazz, Hip-Hop…", required: true })));
+    } else if (type === "era") {
+      paramsSection.appendChild(h("div.field",
+        h("label", "From year"), fromYearEl = h("input", { type: "number", value: "1990", min: "1900", max: "2030" }),
+        h("label", { style: { marginLeft: "8px" } }, "To year"), toYearEl = h("input", { type: "number", value: "1999", min: "1900", max: "2030" })));
+    } else if (type === "similar") {
+      paramsSection.appendChild(h("div.field",
+        h("label", "Seed track Jellyfin ID"), seedEl = h("input", { type: "text", placeholder: "Paste a Jellyfin item ID", required: true })));
+    }
+  }
+
+  const dialog = h("dialog",
+    h("h3", { style: { margin: "0 0 16px" } }, "Generate playlist"),
+
+    h("div.field",
+      h("label", "Playlist name"), nameEl = h("input", { type: "text", required: true, placeholder: "My smart playlist" })),
+
+    h("div.field",
+      h("label", "Type"), typeEl = h("select", { onchange: updateParams },
+        ...GEN_TYPES.map(t => h("option", { value: t.value }, `${t.label} — ${t.hint}`)))),
+
+    paramsSection = h("div"),
+
+    h("div.field",
+      h("label", "Track count"), limitEl = h("input", { type: "number", value: "25", min: "1", max: "200" })),
+
+    h("div", { style: { display: "flex", gap: "8px", marginTop: "16px" } },
+      h("button.primary", {
+        onclick: async () => {
+          const name = nameEl.value.trim();
+          const type = typeEl.value;
+          const limit = parseInt(limitEl.value, 10) || 25;
+          if (!name) { toast("Name is required", "error"); return; }
+          const params = { limit };
+          if (type === "genre") params.genre = genreEl?.value?.trim() || "";
+          if (type === "era") { params.from_year = parseInt(fromYearEl?.value, 10); params.to_year = parseInt(toYearEl?.value, 10); }
+          if (type === "similar") params.seed_track_id = seedEl?.value?.trim() || "";
+          try {
+            const res = await api.post("/api/playlists/generate", { name, type, params });
+            toast(`Created "${res.name}" with ${res.track_count} tracks`);
+            dialog.close();
+            dialog.remove();
+          } catch (e) {
+            toast(`Generate failed: ${e.message}`, "error");
+          }
+        },
+      }, "Generate"),
+      h("button", { onclick: () => { dialog.close(); dialog.remove(); } }, "Cancel"),
+    ),
+  );
+
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  updateParams();
+}
+
+// ── Similar artist discovery ──────────────────────────────────────────────────
+
+let discoverResults = null;   // null = not fetched, [] = fetched empty
+let discoverLoading = false;
+
+async function runDiscover() {
+  if (discoverLoading) return;
+  discoverLoading = true;
+  renderDiscoverSection();
+  try {
+    const res = await api.get("/api/discover/similar_artists?limit=30");
+    discoverResults = res.artists || [];
+  } catch (e) {
+    toast(`Discovery failed: ${e.message}`, "error");
+    discoverResults = null;
+  }
+  discoverLoading = false;
+  renderDiscoverSection();
+}
+
+function renderDiscoverSection() {
+  const el = document.getElementById("discover-section");
+  if (!el) return;
+  el.innerHTML = "";
+
+  if (discoverLoading) {
+    el.appendChild(h("p", { style: { color: "var(--text-dim)" } }, "Querying Last.fm…"));
+    return;
+  }
+  if (discoverResults === null) return;
+  if (discoverResults.length === 0) {
+    el.appendChild(h("p", { style: { color: "var(--text-dim)" } }, "No new similar artists found."));
+    return;
+  }
+
+  el.appendChild(h("table",
+    h("thead", h("tr",
+      h("th", "Artist"), h("th", "Similar to"), h("th", "Score"), h("th", ""),
+    )),
+    h("tbody",
+      ...discoverResults.map(a =>
+        h("tr",
+          h("td", a.name),
+          h("td", { style: { color: "var(--text-dim)", fontSize: "12px" } },
+            Array.isArray(a.similar_to) ? a.similar_to.join(", ") : a.similar_to),
+          h("td", { style: { color: "var(--text-dim)", fontSize: "12px" } },
+            Math.round((a.match || 0) * 100) + "%"),
+          h("td",
+            a.url
+              ? h("a", { href: a.url, target: "_blank", rel: "noopener", style: { fontSize: "12px" } }, "Last.fm ↗")
+              : null,
+          ),
+        )
+      ),
+    ),
+  ));
 }
 
 async function onChangeMode(id, mode) {
@@ -260,6 +423,11 @@ function row(p) {
     h("td", { style: { width: "1%", whiteSpace: "nowrap" } },
       h("div", { style: { display: "flex", gap: "4px" } },
         h("button", { onclick: () => onSyncOne(id, p.jellyfin_playlist_name), title: "Sync this playlist now" }, "↺"),
+        h("button", {
+          onclick: () => onExport(id, p.jellyfin_playlist_name),
+          title: "Export playlist as JSON backup",
+          style: { fontSize: "12px" },
+        }, "⬇"),
         h("button.danger", {
           onclick: () => onDelete(id, p.jellyfin_playlist_name),
           disabled: !isConfigured,
@@ -286,6 +454,23 @@ function render() {
         "or to add playlists before enabling auto-sync."),
     ));
   }
+
+  // ── Import card ───────────────────────────────────────────────────
+  let importFileEl;
+  const importCard = h("div.card",
+    h("div.card-row",
+      h("h2", { style: { margin: 0 } }, "Import playlist"),
+      h("span", { style: { color: "var(--text-dim)", fontSize: "13px" } }, "Restore from an Octave JSON backup"),
+    ),
+    h("div.field", { style: { marginTop: "8px" } },
+      importFileEl = h("input", { type: "file", accept: ".json,.octave.json" }),
+    ),
+    h("button.primary", {
+      onclick: () => onImport(importFileEl.files[0]),
+      style: { marginTop: "4px" },
+    }, "Import"),
+  );
+  containerRef.appendChild(importCard);
 
   // ── Add form ──────────────────────────────────────────────────────
   const form = h("form.card",
@@ -366,6 +551,32 @@ function render() {
   }
 
   containerRef.appendChild(tableCard);
+
+  // ── Generate card ─────────────────────────────────────────────────
+  containerRef.appendChild(h("div.card",
+    h("div.card-row",
+      h("h2", { style: { margin: 0 } }, "Generate playlist"),
+      h("span", { style: { color: "var(--text-dim)", fontSize: "13px" } },
+        "Create a new Jellyfin playlist from a smart query"),
+    ),
+    h("div", { style: { marginTop: "8px" } },
+      h("button.primary", { onclick: openGenerateModal }, "⚡ New smart playlist"),
+    ),
+  ));
+
+  // ── Discover similar artists card ─────────────────────────────────
+  containerRef.appendChild(h("div.card",
+    h("div.card-row",
+      h("h2", { style: { margin: 0 } }, "Discover similar artists"),
+      h("span", { style: { color: "var(--text-dim)", fontSize: "13px" } },
+        "Artists similar to your library that you don't have yet (requires Last.fm API key)"),
+    ),
+    h("div", { style: { marginTop: "8px" } },
+      h("button", { onclick: runDiscover }, "🔍 Find similar artists"),
+    ),
+    h("div", { id: "discover-section", style: { marginTop: "12px" } }),
+  ));
+  renderDiscoverSection();
 }
 
 export default {

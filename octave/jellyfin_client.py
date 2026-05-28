@@ -338,3 +338,90 @@ class JellyfinClient:
         except Exception as exc:
             log.warning("  Cover art upload failed for playlist id=%s: %s", playlist_id, exc)
         return False
+
+    # ── Play history ───────────────────────────────────────────────────────
+
+    def mark_played(self, item_id: str, date_played: str | None = None) -> None:
+        """Mark an item as played in Jellyfin.
+
+        date_played: optional 'YYYYMMDDHHMMSS' UTC string for backdated imports.
+        Increments play count and sets LastPlayedDate.
+        """
+        params: dict = {}
+        if date_played:
+            params["DatePlayed"] = date_played
+        self._post(f"/Users/{self.user_id}/PlayedItems/{item_id}", **params)
+
+    # ── Rich playlist helpers ──────────────────────────────────────────────
+
+    def get_playlist_items_rich(self, playlist_id: str) -> list[dict]:
+        """Return playlist tracks with artist/album metadata for export."""
+        data = self._get(
+            f"/Playlists/{playlist_id}/Items",
+            UserId=self.user_id,
+            Fields="BasicSyncInfo,UserData,ArtistItems,AlbumArtist",
+        )
+        return data.get("Items", [])
+
+    def find_playlist_by_name(self, name: str) -> dict | None:
+        """Find the first Jellyfin playlist whose name matches (case-insensitive)."""
+        for pl in self.get_playlists():
+            if pl.get("Name", "").lower() == name.lower():
+                return pl
+        return None
+
+    # ── Smart playlist queries ─────────────────────────────────────────────
+
+    def query_audio_items(
+        self,
+        genre: str | None = None,
+        years: list[int] | None = None,
+        is_played: bool | None = None,
+        similar_to: str | None = None,
+        sort_by: str = "Random",
+        limit: int = 50,
+    ) -> list[dict]:
+        """Flexible audio query for smart playlist generation.
+
+        Dispatches to /Items/{id}/Similar when similar_to is set,
+        otherwise constructs a filtered /Users/{uid}/Items query.
+        """
+        fields = "BasicSyncInfo,UserData,ArtistItems"
+        if similar_to:
+            data = self._get(
+                f"/Items/{similar_to}/Similar",
+                UserId=self.user_id,
+                Limit=limit,
+                Fields=fields,
+            )
+            return data.get("Items", [])
+
+        params: dict = dict(
+            UserId=self.user_id,
+            IncludeItemTypes="Audio",
+            Recursive=True,
+            SortBy=sort_by,
+            Limit=limit,
+            Fields=fields,
+        )
+        if genre:
+            params["Genres"] = genre
+        if years:
+            params["Years"] = ",".join(str(y) for y in years)
+        if is_played is not None:
+            params["IsPlayed"] = str(is_played).lower()
+
+        data = self._get(f"/Users/{self.user_id}/Items", **params)
+        return data.get("Items", [])
+
+    def get_all_album_artists(self, limit: int = 5000) -> list[dict]:
+        """Return all album artists sorted by play count (descending)."""
+        data = self._get(
+            "/Artists/AlbumArtists",
+            UserId=self.user_id,
+            SortBy="PlayCount",
+            SortOrder="Descending",
+            Limit=limit,
+            Fields="PrimaryImageAspectRatio",
+        )
+        return data.get("Items", [])

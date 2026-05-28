@@ -533,11 +533,94 @@ function render(settings) {
     containerRef.appendChild(sectionHTML(section, settings));
   });
 
+  // ── Last.fm history import ─────────────────────────────────────────────────
+  containerRef.appendChild(buildLastFmImportCard());
+
   containerRef.appendChild(h("div", { style: { display: "flex", gap: "8px", marginTop: "16px" } },
     h("button", { onclick: load }, "Reset"),
     h("button.primary", { onclick: save }, "Save All"),
     h("button.primary", { onclick: saveAndTest, style: { background: "var(--ok)" } }, "Test All"),
   ));
+}
+
+// ── Last.fm history import card ────────────────────────────────────────────────
+
+let _historyPollTimer = null;
+
+function buildLastFmImportCard() {
+  let statusEl;
+
+  async function refreshImportStatus() {
+    try {
+      const res = await api.get("/api/sync/lastfm_history/status");
+      if (!statusEl) return;
+      const s = res.status || "idle";
+      if (s === "idle") {
+        statusEl.textContent = "Not yet imported.";
+        statusEl.style.color = "var(--text-dim)";
+        stopHistoryPoll();
+      } else if (s === "running") {
+        const pg = res.current_page || 0;
+        const tot = res.total_pages || "?";
+        const imported = res.imported_count || 0;
+        const matched = res.matched || 0;
+        statusEl.textContent = `Importing… page ${pg}/${tot} — ${imported} scrobbles, ${matched} matched`;
+        statusEl.style.color = "var(--accent)";
+      } else if (s === "done") {
+        statusEl.textContent = `Done ✅ — ${res.matched} / ${res.imported_count} scrobbles matched to Jellyfin tracks`;
+        statusEl.style.color = "var(--ok)";
+        stopHistoryPoll();
+      } else if (s === "error") {
+        statusEl.textContent = `Error: ${res.error}`;
+        statusEl.style.color = "var(--error, #c00)";
+        stopHistoryPoll();
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function stopHistoryPoll() {
+    if (_historyPollTimer) { clearInterval(_historyPollTimer); _historyPollTimer = null; }
+  }
+
+  async function startImport(fromScratch) {
+    try {
+      const body = fromScratch ? { from_ts: 0 } : {};
+      await api.post("/api/sync/lastfm_history", body);
+      toast("Last.fm import started");
+      stopHistoryPoll();
+      _historyPollTimer = setInterval(refreshImportStatus, 4000);
+      await refreshImportStatus();
+    } catch (e) {
+      if (e.status === 409) toast("Import already running", "warn");
+      else toast(`Start failed: ${e.message}`, "error");
+    }
+  }
+
+  // Kick off a status check immediately so the card shows current state on load
+  setTimeout(refreshImportStatus, 100);
+
+  return h("div.card",
+    h("div.card-row",
+      h("h3", "Last.fm → Jellyfin history import"),
+    ),
+    h("p", { style: { color: "var(--text-dim)", fontSize: "13px" } },
+      "Pull your Last.fm scrobble history and write backdated play counts into Jellyfin. " +
+      "Requires Last.fm API Key and Username above. Large libraries may take several minutes."),
+    statusEl = h("p", { style: { fontSize: "13px", minHeight: "20px", margin: "8px 0", color: "var(--text-dim)" } },
+      "Checking…"),
+    h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+      h("button.primary", { onclick: () => startImport(false) }, "Import new scrobbles"),
+      h("button", {
+        onclick: () => {
+          if (!confirm("Re-import ALL Last.fm history from the beginning? This may create duplicate play counts if you've imported before.")) return;
+          startImport(true);
+        },
+      }, "Import all (from scratch)"),
+    ),
+    h("p", { style: { color: "var(--text-dim)", fontSize: "11px", marginTop: "8px" } },
+      '"Import new scrobbles" resumes from the last imported timestamp. ' +
+      '"Import all" reimports everything — use cautiously as it may inflate play counts.'),
+  );
 }
 
 async function save() {

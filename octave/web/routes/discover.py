@@ -4,6 +4,7 @@ GET  /api/discover/services              -- probe LAN for Jellyfin / Lidarr
 POST /api/discover/jellyfin/connect      -- username+password -> api_key + user_id
 POST /api/discover/jellyfin/libraries    -- api_key + user_id -> media library list
 POST /api/discover/lidarr/validate       -- url + api_key -> connectivity check
+GET  /api/discover/similar_artists       -- Last.fm similar artists not yet in library
 """
 
 from __future__ import annotations
@@ -132,6 +133,88 @@ async def jellyfin_connect(body: dict):
         "libraries":    libraries,
         "music_libraries": [lib for lib in libraries if lib["type"] == "music"],
     })
+
+
+@router.get("/similar_artists")
+async def similar_artists(seed: str | None = None, limit: int = 20):
+    """Return artists similar to your Jellyfin library that you don't have yet.
+
+    seed: optional Jellyfin artist ID to use as the seed; defaults to top-5
+          most-played album artists.
+    limit: max suggestions to return (default 20).
+
+    Requires LASTFM_API_KEY to be configured in Settings.
+    """
+    from ...config import load_config
+    from ...jellyfin_client import JellyfinClient
+    from ...lastfm import LastFMClient
+    from ..settings import get_setting
+
+    lastfm_key = get_setting("LASTFM_API_KEY")
+    if not lastfm_key:
+        raise HTTPException(503, "LASTFM_API_KEY not configured — set it in Settings → Last.fm")
+
+    try:
+        cfg = load_config()
+        jf = JellyfinClient(cfg)
+
+        all_artists = await asyncio.to_thread(jf.get_all_album_artists)
+        artist_names_lower = {a["Name"].lower() for a in all_artists if a.get("Name")}
+
+        # Resolve seed
+        if seed:
+            seed_artists = [a for a in all_artists if a.get("Id") == seed]
+            if not seed_artists:
+                raise HTTPException(404, f"Artist {seed!r} not found in Jellyfin")
+        else:
+            seed_artists = all_artists[:5]  # top 5 by play count
+
+        lfm = LastFMClient(api_key=lastfm_key)
+
+        # Collect similar artists cross-referencing seed list
+        candidates: dict[str, dict] = {}
+
+        def _fetch_similar():
+            for artist in seed_artists:
+                for s in lfm.get_similar_artists(artist["Name"], limit=30):
+                    name = (s.get("name") or "").strip()
+                    if not name or name.lower() in artist_names_lower:
+                        continue
+                    key = name.lower()
+                    if key in candidates:
+                        candidates[key]["frequency"] += 1
+                        candidates[key]["match"] = max(
+                            candidates[key]["match"], float(s.get("match") or 0)
+                        )
+                        if artist["Name"] not in candidates[key]["similar_to"]:
+                            candidates[key]["similar_to"].append(artist["Name"])
+                    else:
+                        candidates[key] = {
+                            "name": name,
+                            "mbid": s.get("mbid", ""),
+                            "url": s.get("url", ""),
+                            "match": float(s.get("match") or 0),
+                            "frequency": 1,
+                            "similar_to": [artist["Name"]],
+                        }
+
+        await asyncio.to_thread(_fetch_similar)
+
+        ranked = sorted(
+            candidates.values(),
+            key=lambda x: (-x["frequency"], -x["match"]),
+        )[:limit]
+
+        return ok({
+            "artists": ranked,
+            "seeded_from": [a["Name"] for a in seed_artists],
+        })
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Similar artist discovery failed")
+        raise HTTPException(500, str(exc))
 
 
 @router.post("/lidarr/validate")
