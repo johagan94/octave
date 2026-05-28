@@ -2,7 +2,7 @@
   <Profile>
     Octave syncs Spotify playlists into Jellyfin, auto-requests missing albums in Lidarr, and enriches matching with ListenBrainz and Last.fm. Browser-based setup with automatic credential discovery — no config files needed.
   </Profile>
-  <Icon>https://raw.githubusercontent.com/johogan94/octave/main/docs/logo.png</Icon>
-  <WebPage>https://github.com/johogan94/octave</WebPage>
-  <Forum>https://github.com/johogan94/octave/issues</Forum>
+  <Icon>https://raw.githubusercontent.com/johagan94/octave/main/docs/logo.png</Icon>
+  <WebPage>https://github.com/johagan94/octave</WebPage>
+  <Forum>https://github.com/johagan94/octave/issues</Forum>
 </CommunityApplications>
