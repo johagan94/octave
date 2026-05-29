@@ -20,7 +20,6 @@ log = logging.getLogger(__name__)
 # All secret/credential keys that can be managed via the UI.
 SECRET_KEYS = [
     "SPOTIFY_CLIENT_ID",
-    "SPOTIFY_CLIENT_SECRET",
     "SPOTIFY_REDIRECT_URI",
     "JELLYFIN_URL",
     "JELLYFIN_API_KEY",

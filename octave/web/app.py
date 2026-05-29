@@ -87,8 +87,8 @@ async def lifespan(app: FastAPI):
     configure_logging()
     db.init_db()
     runner.load_last_from_db()
-    log.info("[web] startup complete; api_key_required=%s",
-             bool(os.environ.get("API_KEY", "").strip()))
+    log.info("[web] startup complete; auth_enabled=%s",
+             bool(_get_setting("AUTH_PASSWORD") if callable(_get_setting := lambda k: __import__("octave.web.settings", fromlist=["get_setting"]).get_setting(k)) else ""))
 
     cron = os.environ.get("SYNC_SCHEDULE", "").strip() or _DEFAULT_CRON
     scheduler = _make_scheduler(cron)

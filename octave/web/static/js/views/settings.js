@@ -16,7 +16,6 @@ const SECTIONS = [
     help: "Leave Client ID blank to use the bundled app. With your own Spotify app, add the redirect URI shown after Connect Spotify (the Octave external URL + /callback) in developer.spotify.com/dashboard. Client Secret is only for legacy (non-PKCE) flows.",
     fields: [
       { key: "SPOTIFY_CLIENT_ID", label: "Client ID (optional)", type: "text", required: false },
-      { key: "SPOTIFY_CLIENT_SECRET", label: "Client Secret (optional)", type: "password", required: false },
       { key: "SPOTIFY_REDIRECT_URI", label: "Redirect URI", type: "text", required: false, placeholder: "https://octave.yourdomain.com/callback" },
     ],
     actions: [

@@ -309,7 +309,7 @@ def get_lastfm_history_status():
 @router.get("/sync/missing")
 def get_missing_tracks():
     """Return all missing tracks from the most recent sync."""
-    path = Path("data/missing_tracks.json")
+    path = Path(os.environ.get("SYNC_DATA_DIR", "data")) / "missing_tracks.json"
     if not path.exists():
         return ok({"playlists": {}})
     try:
@@ -322,7 +322,7 @@ def get_missing_tracks():
 @router.get("/sync/missing/download/{spotify_id}")
 def download_missing_csv(spotify_id: str):
     """Download missing tracks for a playlist as CSV."""
-    path = Path("data/missing_tracks.json")
+    path = Path(os.environ.get("SYNC_DATA_DIR", "data")) / "missing_tracks.json"
     if not path.exists():
         return Response(content="No data", media_type="text/plain")
     data = json.loads(path.read_text())

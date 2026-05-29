@@ -18,6 +18,15 @@ from fastapi import APIRouter, HTTPException
 from ..envelope import ok
 
 log = logging.getLogger(__name__)
+
+def _safe_url(url: str) -> str:
+    """Reject non-http(s) URLs to limit SSRF to the LAN."""
+    if not url.startswith(("http://", "https://")):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+    return url
+
+
 router = APIRouter(prefix="/discover")
 
 _PROBE_TIMEOUT = httpx.Timeout(3.0, connect=1.5)
@@ -72,7 +81,7 @@ async def jellyfin_connect(body: dict):
     Returns api_key (session AccessToken), user_id, and a list of media
     libraries so the caller can immediately pick the music library.
     """
-    url      = (body.get("url") or "").strip().rstrip("/")
+    url      = _safe_url((body.get("url") or "").strip().rstrip("/"))
     username = (body.get("username") or "").strip()
     password = body.get("password") or ""
 
@@ -220,7 +229,7 @@ async def similar_artists(seed: str | None = None, limit: int = 20):
 @router.post("/lidarr/validate")
 async def lidarr_validate(body: dict):
     """Validate a Lidarr URL + API key. Returns version info on success."""
-    url     = (body.get("url") or "").strip().rstrip("/")
+    url     = _safe_url((body.get("url") or "").strip().rstrip("/"))
     api_key = (body.get("api_key") or "").strip()
 
     if not url or not api_key:
