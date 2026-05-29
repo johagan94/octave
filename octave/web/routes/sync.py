@@ -43,7 +43,7 @@ def _save_history_state(state: dict) -> None:
     tmp.replace(p)
 
 
-def _run_lastfm_import(from_ts: int | None) -> None:
+def _run_lastfm_import(from_ts: int | None, from_scratch: bool = False) -> None:
     """Synchronous worker — runs in a thread-pool executor."""
     from ...config import load_config
     from ...jellyfin_client import JellyfinClient
@@ -64,8 +64,8 @@ def _run_lastfm_import(from_ts: int | None) -> None:
         _import_lock.release()
         return
 
-    # Inherit watermark from previous run unless caller overrides
-    if from_ts is None:
+    # Inherit watermark from previous run unless this is a full re-import
+    if not from_scratch and from_ts is None:
         try:
             prev = json.loads(_history_state_path().read_text())
             from_ts = prev.get("last_imported_ts")
@@ -223,9 +223,12 @@ async def start_lastfm_history(body: dict = Body(default={})):
     """
     if not _import_lock.acquire(blocking=False):
         return err("already_running", "A Last.fm history import is already running", status=409)
-    from_ts = body.get("from_ts") or None
+    from_scratch = bool(body.get("from_scratch", False))
+    # Explicit from_ts (int) overrides watermark; from_scratch ignores both
+    raw_ts = body.get("from_ts")
+    from_ts = int(raw_ts) if (raw_ts is not None and not from_scratch) else None
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _run_lastfm_import, from_ts)
+    loop.run_in_executor(None, _run_lastfm_import, from_ts, from_scratch)
     return ok({"message": "Import started"})
 
 

@@ -573,7 +573,7 @@ function buildLastFmImportCard() {
 
   async function startImport(fromScratch) {
     try {
-      const body = fromScratch ? { from_ts: 0 } : {};
+      const body = fromScratch ? { from_scratch: true } : {};
       await api.post("/api/sync/lastfm_history", body);
       toast("Last.fm import started");
       stopHistoryPoll();
