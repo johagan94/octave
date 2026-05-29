@@ -213,6 +213,23 @@ class SyncRequest(BaseModel):
     playlist_ids: Optional[List[str]] = None
 
 
+@router.post("/sync/lastfm_history")
+async def start_lastfm_history(body: dict = Body(default={})):
+    """Start a background Last.fm → Jellyfin play-count import.
+
+    Fetches all scrobbles since the last import watermark (or ``from_ts``
+    if provided) and calls Jellyfin's PlayedItems API for each matched track.
+    Returns 409 if an import is already running.
+    """
+    if not _import_lock.acquire(blocking=False):
+        return err("already_running", "A Last.fm history import is already running", status=409)
+    from_ts = body.get("from_ts") or None
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _run_lastfm_import, from_ts)
+    return ok({"message": "Import started"})
+
+
+
 @router.post("/sync/{type}")
 async def trigger_sync(
     type: SyncTypeParam = FPath(..., description="Sync target: 'playlists' or 'all'"),
@@ -275,21 +292,6 @@ def get_sync_run_detail(run_id: int):
         ],
     })
 
-
-@router.post("/sync/lastfm_history")
-async def start_lastfm_history(body: dict = Body(default={})):
-    """Start a background Last.fm → Jellyfin play-count import.
-
-    Fetches all scrobbles since the last import watermark (or ``from_ts``
-    if provided) and calls Jellyfin's PlayedItems API for each matched track.
-    Returns 409 if an import is already running.
-    """
-    if not _import_lock.acquire(blocking=False):
-        return err("already_running", "A Last.fm history import is already running", status=409)
-    from_ts = body.get("from_ts") or None
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _run_lastfm_import, from_ts)
-    return ok({"message": "Import started"})
 
 
 @router.get("/sync/lastfm_history/status")
