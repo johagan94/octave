@@ -82,3 +82,55 @@ jobs:
 
       - name: Unit tests
         run: pytest tests
+
+  docs-check:
+    name: Docs check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate CA template XML
+        run: python3 -c "import xml.etree.ElementTree as ET; ET.parse('templates/octave.xml'); print('templates/octave.xml: OK')"
+      - name: Check README exists
+        run: test -s README.md && echo "README.md: OK"
+
+  create-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    needs: [build, smoke-test, docs-check]
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            RANGE=""
+          else
+            RANGE="$PREV_TAG..HEAD"
+          fi
+          echo "changes<<EOF" >> "$GITHUB_OUTPUT"
+          git log $RANGE --pretty=format:"- %s (%h)" >> "$GITHUB_OUTPUT"
+          printf '\n' >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Octave ${{ github.ref_name }}
+          body: |
+            ## Changes
+            ${{ steps.changelog.outputs.changes }}
+
+            ## Docker Image
+            ```
+            docker pull ghcr.io/${{ github.repository }}:latest
+            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
+          generate_release_notes: true
+          draft: false
+          prerelease: false

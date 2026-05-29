@@ -126,4 +126,8 @@ Octave keeps your Spotify playlists mirrored into Jellyfin with three sync modes
   <Config Name="Last.fm Username" Target="LASTFM_USERNAME" Default=""
     Description="Optional. Last.fm username for scrobble history lookups."
     Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Changes>
+Full release notes and changelog for all versions:
+https://github.com/jackohagan94-afk/octave/releases
+  </Changes>
 </Container>
