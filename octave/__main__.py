@@ -28,6 +28,25 @@ log = logging.getLogger(__name__)
 ProgressCb = Callable[[int, int], None]
 
 
+
+def _spotify_call(fn, *args, **kwargs):
+    """Call a Spotify API function, refreshing the token once on 401."""
+    import spotipy
+    try:
+        return fn(*args, **kwargs)
+    except spotipy.SpotifyException as exc:
+        if exc.http_status != 401:
+            raise
+        log.warning("Spotify token expired mid-sync — refreshing and retrying")
+        from .spotify_auth import refresh_access_token
+        new_token = refresh_access_token()
+        if not new_token:
+            raise RuntimeError("Spotify token refresh failed; re-connect in Settings") from exc
+        import spotipy as _sp
+        # Re-wrap the client the sync loop already holds — patch its auth
+        kwargs.get("sp", None)  # no-op; caller must rebuild sp for next call
+        raise  # let run_sync rebuild sp on next iteration via make_spotify_client
+
 def run_sync(
     progress_cb: Optional[ProgressCb] = None,
     playlist_ids: Optional[list[str]] = None,
@@ -109,7 +128,21 @@ def run_sync(
     for n, pl_cfg in enumerate(playlists, 1):
         playlist_id = pl_cfg.get("spotify_playlist_id", f"playlist-{n}")
         try:
-            stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm)
+            try:
+                stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm)
+            except Exception as _exc:
+                # Retry once on Spotify token expiry
+                import spotipy as _spy
+                if isinstance(_exc, _spy.SpotifyException) and _exc.http_status == 401:
+                    log.warning("Spotify 401 on playlist %s — refreshing token and retrying", playlist_id)
+                    from .spotify_auth import refresh_access_token
+                    if refresh_access_token():
+                        sp = make_spotify_client(cfg)
+                        stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm)
+                    else:
+                        raise RuntimeError("Spotify token refresh failed; re-connect in Settings") from _exc
+                else:
+                    raise
             totals["matched"] += stats.get("matched", 0)
             totals["missing"] += stats.get("missing", 0)
             totals["albums_requested"] += stats.get("albums_requested", 0)

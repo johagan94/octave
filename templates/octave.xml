@@ -39,9 +39,6 @@ Octave keeps your Spotify playlists mirrored into Jellyfin with three sync modes
     Description="Octave web interface and API."
     Type="Port" Display="always" Required="true" Mask="false">8000</Config>
 
-  <Config Name="Spotify OAuth Callback Port" Target="8888" Default="8888" Mode="tcp"
-    Description="Temporary PKCE OAuth callback listener. Used only during Spotify login — can be removed after first auth if not using a reverse proxy. Add http://[SERVER-IP]:8888/callback to your Spotify app redirect URIs, or set SPOTIFY_REDIRECT_URI to your reverse-proxy callback URL."
-    Type="Port" Display="always" Required="true" Mask="false">8888</Config>
 
   <!-- Volumes -->
   <Config Name="Config Path" Target="/app/config" Default="/mnt/user/appdata/octave/config" Mode="rw"
@@ -129,17 +126,4 @@ Octave keeps your Spotify playlists mirrored into Jellyfin with three sync modes
   <Config Name="Last.fm Username" Target="LASTFM_USERNAME" Default=""
     Description="Optional. Last.fm username for scrobble history lookups."
     Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-
-  <!-- Subsonic / OpenSubsonic API -->
-  <Config Name="External URL" Target="OCTAVE_EXTERNAL_URL" Default=""
-    Description="Publicly-reachable URL for this Octave instance (e.g. your Tailscale hostname). Used by the Subsonic API to advertise the correct server address to music clients. Leave blank to fall back to the request origin."
-    Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-
-  <Config Name="Subsonic Username" Target="SUBSONIC_USERNAME" Default=""
-    Description="Username for OpenSubsonic clients (Amperfy, SubStreamer, etc.). Defaults to AUTH_USERNAME if blank."
-    Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-
-  <Config Name="Subsonic Password" Target="SUBSONIC_PASSWORD" Default=""
-    Description="Password for OpenSubsonic clients. Must be stored in plain text so Subsonic MD5-token auth can be verified server-side. Keep this different from your Jellyfin password."
-    Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
 </Container>
