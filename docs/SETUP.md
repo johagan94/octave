@@ -18,13 +18,14 @@ Spotify** in the Settings page. Otherwise:
 3. Fill in any name and description.
 4. Set **Website** to anything, such as `http://localhost`.
 5. Under **Redirect URIs**, add the callback URI shown by Octave Settings.
-   For a local browser and Docker host, this is usually:
+   The callback runs on the same port as the web UI (8000). For a local
+   browser and Docker host, this is usually:
    ```
-   http://127.0.0.1:8888/callback
+   http://127.0.0.1:8000/callback
    ```
    If your browser and Docker host are on different machines, use the host IP:
    ```
-   http://192.168.1.50:8888/callback
+   http://192.168.1.50:8000/callback
    ```
 6. Select **Web API** as the API to use.
 7. Click **Save**, then copy the **Client ID** into Octave Settings.
@@ -126,11 +127,10 @@ docker compose ps
 
 1. Browse to `http://<host>:8000/`
 2. Open **Settings**, then click **Connect Spotify**
-3. The container starts a temporary HTTP server on port 8888
-4. Spotify redirects your browser to `http://127.0.0.1:8888/callback?code=...`
-5. The container captures the code, exchanges it for tokens, and saves
-   `./data/.spotify_pkce_token`
-6. All future syncs happen automatically — port 8888 is no longer used
+3. Spotify redirects your browser back to `http://<host>:8000/callback?code=...`,
+   which the Octave web server handles directly (same port as the UI)
+4. The code is exchanged for tokens and saved to `./data/.spotify_pkce_token`
+5. All future syncs happen automatically using the stored refresh token
 
 As long as `./data/.spotify_pkce_token`
 exists and hasn't been revoked, you won't need to reauthenticate.

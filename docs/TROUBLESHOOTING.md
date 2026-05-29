@@ -6,27 +6,40 @@ Solutions to the most common problems.
 
 ## Spotify OAuth
 
-### `ERR_CONNECTION_RESET` when Spotify redirects to port 8888
+### "INVALID_CLIENT: Invalid redirect URI" from Spotify
 
-**Symptom:** Browser shows "This site can't be reached — ERR_CONNECTION_RESET"
-on `http://127.0.0.1:8888/callback`.
+**Symptom:** Spotify shows an error instead of the authorize prompt, or the
+callback fails with a redirect-URI mismatch.
 
-**Cause:** The OAuth callback server inside the container was binding to
-`127.0.0.1` (container-internal loopback). Docker port mapping only works with
-`0.0.0.0`.
+**Cause:** The redirect URI registered in your Spotify app does not exactly
+match the one Octave sends.
 
-**Fix:** This is already patched in `spotify_client.py`. If you're on an older
-version, update to the current code and rebuild.
+**Fix:**
 
-**If you still get this error:**
+1. In Octave **Settings → Connect Spotify**, note the redirect URI shown.
+2. In developer.spotify.com/dashboard → your app → **Edit Settings → Redirect URIs**,
+   add that exact URL, e.g. `http://<host-ip>:8000/callback` (the callback runs
+   on the web-UI port, 8000).
+3. If you front Octave with a reverse proxy, set `SPOTIFY_REDIRECT_URI` to the
+   public URL (e.g. `https://octave.example.com/callback`) and register that same
+   URL with Spotify. The URLs must match character-for-character.
 
-1. Confirm port 8888 is exposed: `docker compose ps` should show `0.0.0.0:8888->8888/tcp`
-2. Check your firewall allows port 8888 from your browser machine
-3. If your browser and Docker host are on different machines, set:
-   ```env
-   SPOTIFY_REDIRECT_URI=http://<host-ip>:8888/callback
-   ```
-   And add the same URL to your Spotify app's Redirect URIs list.
+### "No Spotify Client ID available" (HTTP 400) on Connect
+
+**Cause:** No Client ID is configured. The public image does not ship a bundled
+Spotify app.
+
+**Fix:** Create a free app at developer.spotify.com/dashboard and paste its
+Client ID into **Settings → Spotify** (no client secret is needed — Octave uses
+PKCE).
+
+### Connected once, now syncs fail with an auth error
+
+**Cause:** The stored token was revoked (e.g. you removed the app from your
+Spotify account) or the Client ID changed.
+
+**Fix:** Click **Disconnect** then **Connect Spotify** again to re-authorize. The
+token lives at `./data/.spotify_pkce_token`.
 
 ---
 

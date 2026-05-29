@@ -60,7 +60,7 @@ RUN chmod +x /app/entrypoint.sh \
 
 USER app
 
-EXPOSE 8000 8888
+EXPOSE 8000
 
 # tini reaps zombies, forwards signals — important for graceful shutdown
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/entrypoint.sh"]

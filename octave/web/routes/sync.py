@@ -44,6 +44,18 @@ def _save_history_state(state: dict) -> None:
 
 
 def _run_lastfm_import(from_ts: int | None, from_scratch: bool = False) -> None:
+    """Run the import worker, always releasing the import lock exactly once.
+
+    The lock is acquired by the route before scheduling this; guaranteeing
+    release here prevents a permanent 409 if the worker raises early.
+    """
+    try:
+        _run_lastfm_import_inner(from_ts, from_scratch)
+    finally:
+        _import_lock.release()
+
+
+def _run_lastfm_import_inner(from_ts: int | None, from_scratch: bool = False) -> None:
     """Synchronous worker — runs in a thread-pool executor."""
     from ...config import load_config
     from ...jellyfin_client import JellyfinClient
@@ -61,7 +73,6 @@ def _run_lastfm_import(from_ts: int | None, from_scratch: bool = False) -> None:
             "error": "LASTFM_USERNAME and LASTFM_API_KEY must be configured in Settings",
             "started_at": started_at,
         })
-        _import_lock.release()
         return
 
     # Inherit watermark from previous run unless this is a full re-import
@@ -71,6 +82,13 @@ def _run_lastfm_import(from_ts: int | None, from_scratch: bool = False) -> None:
             from_ts = prev.get("last_imported_ts")
         except Exception:
             pass
+
+    # S1: the persisted watermark must only advance on full successful
+    # completion. During the run we keep writing the *starting* watermark so an
+    # interrupted/killed import never skips unprocessed (older) pages on the
+    # next incremental run.
+    committed_ts = from_ts
+    any_page_failed = False
 
     _save_history_state({
         "status": "running",
@@ -137,6 +155,7 @@ def _run_lastfm_import(from_ts: int | None, from_scratch: bool = False) -> None:
                     page_data = lfm._get(**page_params)
                 except Exception as exc:
                     log.warning("Last.fm page %d failed: %s", page, exc)
+                    any_page_failed = True
                     continue
 
             for track in page_data.get("recenttracks", {}).get("track", []):
@@ -179,7 +198,7 @@ def _run_lastfm_import(from_ts: int | None, from_scratch: bool = False) -> None:
                 "imported_count": imported,
                 "matched": matched,
                 "unmatched": imported - matched,
-                "last_imported_ts": latest_ts,
+                "last_imported_ts": committed_ts,
             })
 
         _save_history_state({
@@ -192,7 +211,7 @@ def _run_lastfm_import(from_ts: int | None, from_scratch: bool = False) -> None:
             "imported_count": imported,
             "matched": matched,
             "unmatched": imported - matched,
-            "last_imported_ts": latest_ts,
+            "last_imported_ts": (latest_ts if not any_page_failed else committed_ts),
         })
         log.info("Last.fm history import done: %d scrobbles, %d matched", imported, matched)
 
@@ -202,9 +221,8 @@ def _run_lastfm_import(from_ts: int | None, from_scratch: bool = False) -> None:
             "status": "error",
             "error": str(exc),
             "started_at": started_at,
+            "last_imported_ts": committed_ts,
         })
-    finally:
-        _import_lock.release()
 
 SyncTypeParam = Literal["playlists", "all"]
 

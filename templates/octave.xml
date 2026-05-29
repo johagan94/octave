@@ -55,7 +55,7 @@ Octave keeps your Spotify playlists mirrored into Jellyfin with three sync modes
 
   <!-- Spotify — optional here, can be set in UI -->
   <Config Name="Spotify Client ID" Target="SPOTIFY_CLIENT_ID" Default=""
-    Description="Optional — can be set later in the Octave Settings UI. Your Spotify app Client ID from developer.spotify.com/dashboard. Leave blank if you plan to use the bundled app (if shipped) or configure later."
+    Description="Required to connect Spotify. Create a free app at developer.spotify.com/dashboard, copy its Client ID here (or into Settings later), and add your Octave callback URL — http://SERVER-IP:8000/callback — to that app&apos;s Redirect URIs. PKCE is used, so no client secret is needed."
     Type="Variable" Display="always" Required="false" Mask="false"></Config>
 
   <Config Name="Spotify Redirect URI" Target="SPOTIFY_REDIRECT_URI" Default=""
@@ -90,8 +90,8 @@ Octave keeps your Spotify playlists mirrored into Jellyfin with three sync modes
     Type="Variable" Display="advanced" Required="false" Mask="false">octave</Config>
 
   <Config Name="Auth Password" Target="AUTH_PASSWORD" Default=""
-    Description="HTTP Basic Auth password. Leave blank for open access (LAN-trust mode). Set this before exposing Octave outside your LAN."
-    Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+    Description="SECURITY: blank = NO authentication (anyone on the network can access Octave). Set a password before exposing Octave beyond a trusted LAN. Leave blank only for an isolated/LAN-trust setup."
+    Type="Variable" Display="always" Required="false" Mask="true"></Config>
 
   <!-- Runtime -->
   <Config Name="Sync Schedule" Target="SYNC_SCHEDULE" Default="0 2 * * *"
@@ -128,6 +128,6 @@ Octave keeps your Spotify playlists mirrored into Jellyfin with three sync modes
     Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Changes>
 Full release notes and changelog for all versions:
-https://github.com/jackohagan94-afk/octave/releases
+https://github.com/johagan94/octave/releases
   </Changes>
 </Container>

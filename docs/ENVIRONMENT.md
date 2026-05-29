@@ -58,16 +58,16 @@ saved from the web UI Settings page; env vars take priority over saved settings.
 
 | Port | Used by | Notes |
 |---|---|---|
-| `8000` | FastAPI | Map to host with `WEB_PORT` |
-| `8888` | Spotify OAuth callback | Only needed during first-run authentication. Must be reachable from your **browser**, not just from the container. |
+| `8000` | FastAPI web UI **and** the Spotify OAuth `/callback` | Map to host with `WEB_PORT`. Must be reachable from your **browser**. |
+| `8888` | Advanced/legacy only | Fallback OAuth listener, started only when a custom `SPOTIFY_REDIRECT_URI` targets a non-8000 port. Not mapped by default. |
 
 ## First-run checklist
 
 1. `cp .env.example .env`
 2. `docker compose up -d`
 3. Browse to `http://<host>:8000/` and configure Settings
-4. Click **Connect Spotify**; the OAuth callback uses port 8888
-5. Once `.spotify_pkce_token` exists in `./data/`, port 8888 is no longer needed and can be closed at the firewall
+4. Click **Connect Spotify**; the OAuth callback is handled on port 8000 (same as the web UI)
+5. Once `.spotify_pkce_token` exists in `./data/`, authentication persists across restarts
 
 ## Security notes
 
