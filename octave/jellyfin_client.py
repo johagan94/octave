@@ -258,16 +258,19 @@ class JellyfinClient:
         )
         return data.get("Items", [])
 
-    def get_or_create_playlist(self, name: str) -> str:
-        for pl in self.get_playlists():
-            if pl["Name"].lower() == name.lower():
-                return pl["Id"]
+    def create_playlist(self, name: str) -> str:
         log.info("  Creating Jellyfin playlist: %s", name)
         r = self._post(
             "/Playlists",
             payload={"Name": name, "UserId": self.user_id, "MediaType": "Audio"},
         )
         return r.json()["Id"]
+
+    def get_or_create_playlist(self, name: str) -> str:
+        for pl in self.get_playlists():
+            if pl["Name"].lower() == name.lower():
+                return pl["Id"]
+        return self.create_playlist(name)
 
     def get_playlist_items(self, playlist_id: str) -> list[dict]:
         data = self._get(f"/Playlists/{playlist_id}/Items", UserId=self.user_id)
