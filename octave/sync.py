@@ -34,6 +34,74 @@ log = logging.getLogger(__name__)
 _MAX_LIDARR_WORKERS = 4
 
 
+def _jellyfin_playlist_state(state: dict) -> dict:
+    mapping = state.setdefault("jellyfin_playlists", {})
+    return mapping if isinstance(mapping, dict) else {}
+
+
+def _playlist_name_matches(playlist: dict, name: str) -> bool:
+    return playlist.get("Name", "").lower() == name.lower()
+
+
+def _resolve_jellyfin_playlist_id(
+    spotify_id: str,
+    jf_name: str,
+    jf: JellyfinClient,
+    state: dict,
+) -> str:
+    playlist_state = _jellyfin_playlist_state(state)
+    playlists = jf.get_playlists()
+    by_id = {pl.get("Id"): pl for pl in playlists if pl.get("Id")}
+
+    mapped_id = playlist_state.get(spotify_id)
+    if mapped_id:
+        if mapped_id in by_id:
+            return mapped_id
+        log.warning(
+            "  Stored Jellyfin playlist id %s for Spotify playlist %s no longer exists",
+            mapped_id, spotify_id,
+        )
+        playlist_state.pop(spotify_id, None)
+
+    matches = [pl for pl in playlists if _playlist_name_matches(pl, jf_name)]
+    if matches:
+        if len(matches) > 1:
+            log.warning(
+                "  Found %d Jellyfin playlists named %r; using id=%s",
+                len(matches), jf_name, matches[0].get("Id"),
+            )
+        playlist_state[spotify_id] = matches[0]["Id"]
+        save_state(state)
+        return matches[0]["Id"]
+
+    playlist_id = jf.get_or_create_playlist(jf_name)
+    playlist_state[spotify_id] = playlist_id
+    save_state(state)
+    return playlist_id
+
+
+def _rebuild_jellyfin_playlist(
+    spotify_id: str,
+    jf_name: str,
+    jf: JellyfinClient,
+    state: dict,
+) -> str:
+    playlist_state = _jellyfin_playlist_state(state)
+    duplicates = [pl for pl in jf.get_playlists() if _playlist_name_matches(pl, jf_name)]
+    for pl in duplicates:
+        log.info("  rebuild: deleting existing playlist '%s' id=%s", jf_name, pl["Id"])
+        jf.delete_playlist(pl["Id"])
+
+    playlist_id = (
+        jf.create_playlist(jf_name)
+        if hasattr(jf, "create_playlist")
+        else jf.get_or_create_playlist(jf_name)
+    )
+    playlist_state[spotify_id] = playlist_id
+    save_state(state)
+    return playlist_id
+
+
 def request_album_in_lidarr(
     lidarr: Optional[LidarrClient],
     mb: Optional[MusicBrainzResolver],
@@ -330,16 +398,11 @@ def sync_playlist(
     # ── Update Jellyfin playlist ──────────────────────────────────────────
     try:
         if sync_mode == "rebuild":
-            for pl in jf.get_playlists():
-                if pl["Name"].lower() == jf_name.lower():
-                    log.info("  rebuild: deleting existing playlist '%s'", jf_name)
-                    jf.delete_playlist(pl["Id"])
-                    break
-            pl_id = jf.get_or_create_playlist(jf_name)
+            pl_id = _rebuild_jellyfin_playlist(spotify_id, jf_name, jf, state)
             existing_item_ids: set[str] = set()
             existing_items: list[dict] = []
         else:
-            pl_id = jf.get_or_create_playlist(jf_name)
+            pl_id = _resolve_jellyfin_playlist_id(spotify_id, jf_name, jf, state)
             existing_items = jf.get_playlist_items(pl_id)
             existing_item_ids = {i["Id"] for i in existing_items}
 
