@@ -33,14 +33,36 @@ log = logging.getLogger(__name__)
 # Max workers for parallel Lidarr album requests
 _MAX_LIDARR_WORKERS = 4
 
+# After this many runs without finding the album in Lidarr, stop re-queuing
+# RefreshArtist for it (the artist is already in Lidarr; further refreshes are
+# pointless churn). Cheap find-checks still run, so a late-appearing album is
+# still picked up.
+_MAX_ALBUM_REFRESH_ATTEMPTS = 6
+
+# Stop hiding a track behind "waiting for Lidarr" after this many runs and let
+# it be re-evaluated/re-requested as a normal missing track.
+_MAX_WAIT_RUNS = 12
+
 
 def _jellyfin_playlist_state(state: dict) -> dict:
     mapping = state.setdefault("jellyfin_playlists", {})
     return mapping if isinstance(mapping, dict) else {}
 
 
+def _normalise_playlist_name(name: str) -> str:
+    """Normalise a playlist name for comparison.
+
+    Collapses surrounding and repeated whitespace and casefolds, so a configured
+    name carrying a stray trailing space (e.g. ``"Thank You Based God "``) still
+    matches the playlist Jellyfin actually stored — Jellyfin trims trailing
+    whitespace on create, and without this the name lookup misses every run and
+    spawns a fresh duplicate playlist.
+    """
+    return " ".join((name or "").split()).casefold()
+
+
 def _playlist_name_matches(playlist: dict, name: str) -> bool:
-    return playlist.get("Name", "").lower() == name.lower()
+    return _normalise_playlist_name(playlist.get("Name", "")) == _normalise_playlist_name(name)
 
 
 def _resolve_jellyfin_playlist_id(
@@ -129,6 +151,7 @@ def request_album_in_lidarr(
         requested = state["lidarr_requested_albums"]
         entry = requested.get(spotify_album_id, {})
         status = entry.get("status")
+        prior_attempts = int(entry.get("attempts", 0))
 
     if status in ("already_monitored", "requested"):
         return
@@ -228,19 +251,28 @@ def request_album_in_lidarr(
 
     artist_id = lidarr_artist["id"]
 
+    # Refresh only while we still have refresh budget for this album. The
+    # artist is already in Lidarr; re-queuing RefreshArtist every run forever
+    # (once per still-missing album) is what hammered Lidarr. refresh_artist is
+    # also deduped to once-per-artist-per-run inside the client.
+    def _refresh_if_budget() -> None:
+        if prior_attempts < _MAX_ALBUM_REFRESH_ATTEMPTS:
+            try:
+                lidarr.refresh_artist(artist_id)
+            except Exception as exc:
+                log.warning("    Refresh error: %s", exc)
+
     # ── Try to find the album right now ───────────────────────────────────
     albums = lidarr.get_artist_albums(artist_id)
 
     if not albums:
-        try:
-            lidarr.refresh_artist(artist_id)
-        except Exception as exc:
-            log.warning("    Refresh error: %s", exc)
+        _refresh_if_budget()
         with _state_lock:
             requested[spotify_album_id] = {
                 "status":    "artist_added",
                 "artist_id": artist_id,
                 "run":       state["current_run"],
+                "attempts":  prior_attempts + 1,
             }
         save_state(state)
         return
@@ -248,15 +280,23 @@ def request_album_in_lidarr(
     album = lidarr.find_album_in_artist(artist_id, spotify_album_name, albums)
 
     if album is None:
-        try:
-            lidarr.refresh_artist(artist_id)
-        except Exception:
-            pass
+        # Fuzzy title match failed — try an exact MusicBrainz release-group
+        # match before giving up (handles remaster/edition/feat. differences).
+        if mb is not None and spotify_album_id:
+            rg_mbid = mb.get_album_release_group_mbid(spotify_album_id)
+            if rg_mbid:
+                album = lidarr.find_album_by_mbid(rg_mbid, albums)
+                if album is not None:
+                    log.info("    Album matched by MBID: %s (rg=%s)", spotify_album_name, rg_mbid)
+
+    if album is None:
+        _refresh_if_budget()
         with _state_lock:
             requested[spotify_album_id] = {
                 "status":    "album_pending",
                 "artist_id": artist_id,
                 "run":       state["current_run"],
+                "attempts":  prior_attempts + 1,
             }
         save_state(state)
         return
@@ -288,7 +328,10 @@ def sync_playlist(
     spotify_id = playlist_cfg["spotify_playlist_id"]
     # Use .get() OR-fallback (not the default arg): an explicit None value
     # in the dict would otherwise pass through as the literal name "None".
-    jf_name = playlist_cfg.get("jellyfin_playlist_name") or f"Spotify – {spotify_id}"
+    # Strip surrounding whitespace so a configured name like "Thank You Based
+    # God " matches what Jellyfin stores (it trims on create) instead of
+    # spawning a duplicate playlist every run.
+    jf_name = (playlist_cfg.get("jellyfin_playlist_name") or f"Spotify – {spotify_id}").strip()
     sync_mode = playlist_cfg.get("sync_mode") or "add_only"
 
     log.info("═" * 60)
@@ -332,51 +375,66 @@ def sync_playlist(
         log.error("  Jellyfin: failed to build library index: %s", exc)
         raise RuntimeError(f"Jellyfin failed to build library index: {exc}") from exc
 
-    waiting_track_ids = set(state.get("waiting_for_lidarr_tracks", {}).keys())
-
-    # Promote any waiting tracks that Lidarr has since downloaded into Jellyfin
-    if waiting_track_ids:
-        resolved: list[str] = []
-        for track in sp_tracks:
-            tid = track.get("id", "")
-            if tid not in waiting_track_ids:
-                continue
-            if jf.find_track(track["name"], primary_artist(track), tid):
-                resolved.append(tid)
-        if resolved:
-            with _state_lock:
-                for tid in resolved:
-                    state["waiting_for_lidarr_tracks"].pop(tid, None)
-            waiting_track_ids -= set(resolved)
-            log.info(
-                "  %d waiting track(s) now in Jellyfin library; removed from wait list",
-                len(resolved),
-            )
+    waiting_state = state.get("waiting_for_lidarr_tracks", {})
+    waiting_track_ids = set(waiting_state.keys())
 
     # ── Match against Jellyfin ────────────────────────────────────────────
+    # A track "waiting for Lidarr" is matched normally, NOT skipped. Previously
+    # the wait flag hid the track from matching entirely, so even a track Lidarr
+    # had already downloaded and Jellyfin imported never got added to the
+    # playlist. Now: attempt the match every run; if it lands, add it and clear
+    # the wait flag; if it's still absent after _MAX_WAIT_RUNS, give up waiting
+    # and re-treat it as missing so it gets re-requested.
     matched_ids: list[str] = []
     missing: list[dict] = []
     waiting_lidarr: list[str] = []
+    resolved_waits: list[str] = []   # landed → clear wait flag
+    expired_waits: list[str] = []    # waited too long → re-request
 
     for track in sp_tracks:
+        spotify_track_id = track.get("id", "")
         try:
             title = track["name"]
             artist = primary_artist(track)
-            spotify_track_id = track.get("id", "")
-
-            # Check if this track is still waiting for Lidarr to download
-            if spotify_track_id in waiting_track_ids:
-                waiting_lidarr.append(spotify_track_id)
-                continue
 
             jf_item = jf.find_track(title, artist, spotify_track_id)
             if jf_item:
                 matched_ids.append(jf_item["Id"])
+                if spotify_track_id in waiting_track_ids:
+                    resolved_waits.append(spotify_track_id)
+            elif spotify_track_id in waiting_track_ids:
+                entry = waiting_state.get(spotify_track_id)
+                if not isinstance(entry, dict):
+                    entry = {}
+                    waiting_state[spotify_track_id] = entry
+                runs_waited = int(entry.get("runs_waited", 0)) + 1
+                if runs_waited >= _MAX_WAIT_RUNS:
+                    expired_waits.append(spotify_track_id)
+                    missing.append(track)
+                else:
+                    entry["runs_waited"] = runs_waited
+                    waiting_lidarr.append(spotify_track_id)
             else:
                 missing.append(track)
         except Exception as exc:
             log.debug("  Error matching track '%s': %s", track.get("name", "?"), exc)
-            missing.append(track)
+            if spotify_track_id in waiting_track_ids:
+                waiting_lidarr.append(spotify_track_id)
+            else:
+                missing.append(track)
+
+    if resolved_waits or expired_waits:
+        with _state_lock:
+            for tid in resolved_waits:
+                state["waiting_for_lidarr_tracks"].pop(tid, None)
+            for tid in expired_waits:
+                state["waiting_for_lidarr_tracks"].pop(tid, None)
+        if resolved_waits:
+            log.info("  %d waiting track(s) now in Jellyfin; added and cleared from wait list",
+                     len(resolved_waits))
+        if expired_waits:
+            log.info("  %d track(s) waited > %d runs; giving up and re-requesting",
+                     len(expired_waits), _MAX_WAIT_RUNS)
 
     log.info(
         "  Matched %d / %d   Missing %d   Waiting Lidarr %d",
@@ -487,7 +545,10 @@ def sync_playlist(
         artist_name = album_artists[0]["name"] if album_artists else primary_artist(track)
         artist_id = album_artists[0].get("id", "") if album_artists else primary_artist_id(track)
 
-        # Clear retryable states from previous runs
+        # Log retryable states from previous runs. We deliberately do NOT delete
+        # the entry: request_album_in_lidarr already re-runs for any non-terminal
+        # status, and keeping the entry preserves its ``attempts`` counter so the
+        # RefreshArtist budget accumulates across runs instead of resetting.
         existing = state["lidarr_requested_albums"].get(album_id, {})
         if (
             existing.get("status") in (
@@ -497,10 +558,10 @@ def sync_playlist(
             and existing.get("run") != current_run
         ):
             log.info(
-                "  Retrying [%s] from prev run: %s – %s",
-                existing["status"], artist_name, album_name,
+                "  Retrying [%s] from prev run (attempt %d): %s – %s",
+                existing["status"], int(existing.get("attempts", 0)) + 1,
+                artist_name, album_name,
             )
-            del state["lidarr_requested_albums"][album_id]
 
         album_requests.append({
             "lidarr": lidarr, "mb": mb,
@@ -542,10 +603,12 @@ def sync_playlist(
                 if status in ("requested", "already_monitored"):
                     spotify_track_id = track.get("id", "")
                     if spotify_track_id:
+                        prev = state["waiting_for_lidarr_tracks"].get(spotify_track_id, {})
                         state["waiting_for_lidarr_tracks"][spotify_track_id] = {
                             "album_id": album_id,
                             "status": status,
                             "run": current_run,
+                            "runs_waited": int(prev.get("runs_waited", 0)),
                         }
 
     save_state(state)
