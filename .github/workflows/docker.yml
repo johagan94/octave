@@ -89,9 +89,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate CA template XML
-        run: python3 -c "import xml.etree.ElementTree as ET; ET.parse('templates/octave.xml'); print('templates/octave.xml: OK')"
+        run: |
+          python3 -c "import xml.etree.ElementTree as ET; ET.parse('templates/octave.xml'); print('templates/octave.xml OK')"
       - name: Check README exists
-        run: test -s README.md && echo "README.md: OK"
+        run: |
+          test -s README.md && echo "README.md OK"
 
   create-release:
     name: Create GitHub release
