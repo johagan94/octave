@@ -27,6 +27,14 @@ class LidarrClient:
         # Per-run cache: lowercase artist name → resolved Lidarr artist or None.
         # Sentinel ``...`` distinguishes "not yet looked up" from "looked up, no match".
         self._run_artist_cache: dict[str, Optional[dict]] = {}
+        # Per-run cache of an artist's albums, so processing N missing albums by
+        # the same artist costs one ``GET /album?artistId=`` instead of N.
+        self._run_artist_albums_cache: dict[int, list[dict]] = {}
+        # Artists already sent a RefreshArtist command this run. RefreshArtist is
+        # Lidarr's heaviest command (per-artist MusicBrainz hit); without this,
+        # every missing album by an artist queued its own refresh — hundreds per
+        # run. Dedupe to at most one refresh per artist per run.
+        self._refreshed_artist_ids: set[int] = set()
         # Per-artist locks: prevents parallel threads from double-adding the same artist
         # when multiple missing albums from the same artist are processed concurrently.
         self._run_artist_lock_guard: threading.Lock = threading.Lock()
@@ -174,7 +182,16 @@ class LidarrClient:
             raise
 
     def refresh_artist(self, artist_id: int) -> None:
+        """Queue a Lidarr RefreshArtist, at most once per artist per run.
+
+        Idempotent within a run: repeat calls for the same artist (e.g. several
+        of its albums are still missing) are dropped so we don't storm Lidarr.
+        """
+        if artist_id in self._refreshed_artist_ids:
+            log.debug("    ↳ Lidarr: refresh already queued for artist id=%d this run", artist_id)
+            return
         self._post("/command", {"name": "RefreshArtist", "artistId": artist_id})
+        self._refreshed_artist_ids.add(artist_id)
         log.debug("    ↳ Lidarr: refresh queued for artist id=%d", artist_id)
 
     # ── Album management ──────────────────────────────────────────────────
@@ -185,7 +202,29 @@ class LidarrClient:
         return self._album_cache
 
     def get_artist_albums(self, artist_id: int) -> list[dict]:
-        return self._get("/album", artistId=artist_id)
+        cached = self._run_artist_albums_cache.get(artist_id)
+        if cached is not None:
+            return cached
+        albums = self._get("/album", artistId=artist_id)
+        albums = albums if isinstance(albums, list) else []
+        self._run_artist_albums_cache[artist_id] = albums
+        return albums
+
+    def find_album_by_mbid(
+        self, release_group_mbid: str, albums: list[dict]
+    ) -> Optional[dict]:
+        """Exact match a Lidarr album by its MusicBrainz release-group MBID.
+
+        Lidarr keys albums by release-group (``foreignAlbumId``). This never
+        mis-matches — it's an exact ID compare — so it's a safe fast-path to
+        try before, and as a fallback to, fuzzy title matching.
+        """
+        if not release_group_mbid:
+            return None
+        for a in albums:
+            if a.get("foreignAlbumId") == release_group_mbid:
+                return a
+        return None
 
     def _build_album_index(self) -> None:
         """Build O(1) lookup index for all albums. First checks exact, then score."""

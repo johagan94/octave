@@ -2,8 +2,9 @@ name: Build & publish Docker image
 
 on:
   push:
+    branches: [main]    # publish :latest on every merge to main
     tags:
-      - 'v*.*.*'        # e.g. v2.1.0
+      - 'v*.*.*'        # e.g. v2.1.0 — publish version tags + GitHub release
   pull_request:
     branches: [main]    # build-only (no push) for PRs
 
@@ -43,7 +44,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref_type == 'tag' }}
             type=sha,prefix=sha-,format=short
 
       - name: Build (and push on tag)
@@ -89,9 +90,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate CA template XML
-        run: python3 -c "import xml.etree.ElementTree as ET; ET.parse('templates/octave.xml'); print('templates/octave.xml: OK')"
+        run: |
+          python3 -c "import xml.etree.ElementTree as ET; ET.parse('templates/octave.xml'); print('templates/octave.xml OK')"
       - name: Check README exists
-        run: test -s README.md && echo "README.md: OK"
+        run: |
+          test -s README.md && echo "README.md OK"
 
   create-release:
     name: Create GitHub release

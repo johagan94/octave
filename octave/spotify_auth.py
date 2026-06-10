@@ -284,7 +284,9 @@ pre{{background:#15151d;border:1px solid #222230;border-radius:8px;padding:12px;
 class _CallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         parsed = urlparse(self.path)
-        log.info("Spotify PKCE callback received: %s (from %s)", self.path, self.client_address[0])
+        # Don't log self.path — the query string carries the OAuth ``code`` and
+        # ``state``, which are sensitive and must not land in logs.
+        log.info("Spotify PKCE callback received on %s (from %s)", parsed.path, self.client_address[0])
         if parsed.path != "/callback":
             self.send_response(404)
             self.end_headers()

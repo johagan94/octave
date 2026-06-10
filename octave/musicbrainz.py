@@ -70,3 +70,42 @@ class MusicBrainzResolver:
             log.debug("    MB album lookup failed (%s): %s", spotify_album_id, exc)
         self._album_map[spotify_album_id] = None
         return None
+
+    def get_album_release_group_mbid(self, spotify_album_id: str) -> Optional[str]:
+        """Resolve a Spotify album to a MusicBrainz **release-group** MBID.
+
+        This is the ID Lidarr stores as ``foreignAlbumId``, so it can be matched
+        exactly against a Lidarr artist's catalogue when fuzzy title matching
+        fails (different edition/remaster/feat. tagging). Spotify album URLs in
+        MusicBrainz attach to either a release-group or a specific release; we
+        try the release-group relation first, then derive the group from a
+        linked release. Results (including misses) are cached to respect the
+        1 req/s rate limit.
+        """
+        cache_key = f"rg:{spotify_album_id}"
+        if cache_key in self._album_map:
+            return self._album_map[cache_key]
+        mbid: Optional[str] = None
+        try:
+            url = f"https://open.spotify.com/album/{spotify_album_id}"
+            data = self._get("/url", resource=url, inc="release-group-rels release-rels")
+            for rel in data.get("relations", []):
+                rg = rel.get("release_group") or rel.get("release-group")
+                if rg and rg.get("id"):
+                    mbid = rg["id"]
+                    break
+            if mbid is None:
+                for rel in data.get("relations", []):
+                    release = rel.get("release")
+                    if release and release.get("id"):
+                        rdata = self._get(f"/release/{release['id']}", inc="release-groups")
+                        rg = rdata.get("release-group") or rdata.get("release_group")
+                        if rg and rg.get("id"):
+                            mbid = rg["id"]
+                            break
+            if mbid:
+                log.debug("    MB release-group MBID: %s → %s", spotify_album_id, mbid)
+        except Exception as exc:
+            log.debug("    MB release-group lookup failed (%s): %s", spotify_album_id, exc)
+        self._album_map[cache_key] = mbid
+        return mbid

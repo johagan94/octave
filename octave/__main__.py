@@ -76,8 +76,12 @@ def run_sync(
     if not lidarr_enabled:
         log.info("Lidarr is not configured; missing-track requests will be skipped")
 
-    # Validate track cache against current Jellyfin library
-    jf._build_index()
+    # Validate track cache against current Jellyfin library. If tracks are
+    # waiting on Lidarr downloads, force a live rebuild (bypass the <1h disk
+    # cache) so files Lidarr has since imported are visible and can be matched
+    # into playlists this run instead of staying stuck.
+    force_index = bool(state.get("waiting_for_lidarr_tracks"))
+    jf._build_index(force_reload=force_index)
     valid_ids = {item["Id"] for item in (jf._library_cache or [])}
     track_cache.validate(valid_ids)
 
