@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .. import __version__
 from ..logging_setup import configure_logging
 from . import db
 from .auth import require_auth
@@ -118,7 +119,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Octave",
-        version="3.0.0",
+        version=__version__,
         description="Spotify to Jellyfin + Lidarr sync. ListenBrainz and Last.fm enrichment.",
         lifespan=lifespan,
         docs_url="/api/docs",

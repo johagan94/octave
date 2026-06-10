@@ -24,6 +24,34 @@ match the one Octave sends.
    public URL (e.g. `https://octave.example.com/callback`) and register that same
    URL with Spotify. The URLs must match character-for-character.
 
+### Callback shows NXDOMAIN / "can't reach this page" after authorizing
+
+**Symptom:** Spotify accepts the login, then the browser fails to load the
+`/callback` URL with NXDOMAIN or a connection error — even though the redirect
+URI is registered in your Spotify app.
+
+**Cause:** This is a DNS/reachability problem, not an Octave bug. The redirect
+URI (e.g. `https://octave.example.com/callback`) does not resolve from the
+machine running the browser — common when the hostname only exists in LAN DNS
+and you're authorizing from a device using a different resolver.
+
+**Fix:**
+
+1. Confirm the hostname resolves from the browser's machine
+   (`nslookup octave.example.com`). If it doesn't, add a public DNS record / a
+   Cloudflare Tunnel, or a LAN DNS rewrite / hosts entry pointing at your
+   reverse proxy.
+2. Or authorize entirely on the host: set `SPOTIFY_REDIRECT_URI` to
+   `http://127.0.0.1:8000/callback`, register that in Spotify, and open the
+   Octave UI from the server's own browser. (Spotify only allows plain `http`
+   for the `127.0.0.1` loopback — a LAN IP like `http://192.168.x.x:8000` is
+   rejected.)
+
+> **Note:** `SPOTIFY_REDIRECT_URI` is read from the **environment first**, then
+> `settings.json`. If you set it as a container/`.env` variable, editing it in
+> the Settings UI has no effect until you change the env var (the field shows an
+> orange **env** badge in that case). This precedence applies to every setting.
+
 ### "No Spotify Client ID available" (HTTP 400) on Connect
 
 **Cause:** No Client ID is configured. The public image does not ship a bundled
@@ -115,6 +143,27 @@ with an error like `no token cache`.
    account. Log in as that user in Jellyfin to see it.
 2. Jellyfin sometimes needs a library scan to pick up newly added items.
    Trigger one: Jellyfin → Dashboard → Libraries → Scan All.
+
+---
+
+### Duplicate playlists created every sync (e.g. several copies of one name)
+
+**Symptom:** A playlist is recreated on every sync, leaving many Jellyfin
+playlists with the same name.
+
+**Cause:** The configured playlist name had leading/trailing whitespace (e.g.
+`"Thank You Based God "`). Jellyfin trims the name when it stores the playlist,
+so Octave's name lookup missed the trimmed copy and created a new one each run.
+Fixed in 3.3.3 — names are normalized (trimmed + whitespace-collapsed) for both
+matching and creation, and the resolved playlist id is persisted so subsequent
+runs reuse it.
+
+**Clean up existing duplicates:**
+
+1. Update to 3.3.3+.
+2. In Jellyfin, delete the extra duplicate playlists, keeping one.
+3. Remove any stray spaces from `jellyfin_playlist_name` in `config.json`.
+The next sync will reuse the remaining playlist instead of making new ones.
 
 ---
 
