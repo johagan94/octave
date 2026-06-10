@@ -83,9 +83,6 @@ class JellyfinClient:
                 return
 
         log.info("Fetching Jellyfin music library…")
-        items: list[dict] = []
-        start = 0
-        limit = 1000
         params: dict = dict(
             IncludeItemTypes="Audio",
             Recursive=True,
@@ -94,15 +91,20 @@ class JellyfinClient:
         if self.music_library_id:
             params["ParentId"] = self.music_library_id
             log.info("  Scoping to music library: %s", self.music_library_id)
-        while True:
-            params["StartIndex"] = start
-            params["Limit"] = limit
-            data = self._get(f"/Users/{self.user_id}/Items", **params)
-            batch = data.get("Items", [])
-            items.extend(batch)
-            if start + limit >= data.get("TotalRecordCount", 0):
-                break
-            start += limit
+        try:
+            items = self._fetch_library_items(params)
+        except Exception as exc:
+            # Transient Jellyfin failure (e.g. HTTP 5xx). Rather than abort the
+            # entire multi-playlist sync, fall back to the last persisted index
+            # even if it's past its TTL — stale matches beat aborting every
+            # playlist. A live rebuild is retried on the next run.
+            if self._load_persistent_index(allow_expired=True):
+                log.warning(
+                    "Jellyfin library fetch failed (%s); using last cached index (stale)",
+                    exc,
+                )
+                return
+            raise
 
         self._library_cache = items
         self._exact_index = {}
@@ -119,6 +121,22 @@ class JellyfinClient:
             len(items), len(self._exact_index),
         )
         self._save_persistent_index()
+
+    def _fetch_library_items(self, params: dict) -> list[dict]:
+        """Page through the Jellyfin music library and return all audio items."""
+        items: list[dict] = []
+        start = 0
+        limit = 1000
+        while True:
+            params["StartIndex"] = start
+            params["Limit"] = limit
+            data = self._get(f"/Users/{self.user_id}/Items", **params)
+            batch = data.get("Items", [])
+            items.extend(batch)
+            if start + limit >= data.get("TotalRecordCount", 0):
+                break
+            start += limit
+        return items
 
     def _save_persistent_index(self) -> None:
         """Persist the library index to disk for warm starts."""
@@ -144,11 +162,13 @@ class JellyfinClient:
         except OSError as exc:
             log.debug("Failed to persist library index: %s", exc)
 
-    def _load_persistent_index(self) -> bool:
+    def _load_persistent_index(self, allow_expired: bool = False) -> bool:
         """Load a previously-saved library index. Returns True on success.
 
         Returns False (triggering a live rebuild) if the cache is missing,
         empty, corrupt, or older than LIBRARY_CACHE_TTL_HOURS (default 1h).
+        When ``allow_expired`` is set the TTL check is skipped — used as a
+        last-resort fallback when a live Jellyfin fetch has failed.
         """
         cache_path = _index_cache_path()
         if not cache_path.exists():
@@ -159,7 +179,7 @@ class JellyfinClient:
             if not items:
                 return False
             age = time.time() - data.get("saved_at", 0)
-            if age > _LIBRARY_CACHE_TTL_SECONDS:
+            if age > _LIBRARY_CACHE_TTL_SECONDS and not allow_expired:
                 log.info(
                     "  Library index cache expired (age=%.0fs > TTL=%ds); rebuilding from Jellyfin",
                     age, _LIBRARY_CACHE_TTL_SECONDS,
@@ -258,7 +278,18 @@ class JellyfinClient:
         )
         return data.get("Items", [])
 
+    @staticmethod
+    def _norm_name(name: str) -> str:
+        """Whitespace/case-insensitive key for playlist-name comparison.
+
+        Jellyfin trims trailing whitespace on create, so a configured name with
+        a stray space would otherwise never match and a duplicate playlist would
+        be created on every sync. Collapse + casefold to compare robustly.
+        """
+        return " ".join((name or "").split()).casefold()
+
     def create_playlist(self, name: str) -> str:
+        name = (name or "").strip()
         log.info("  Creating Jellyfin playlist: %s", name)
         r = self._post(
             "/Playlists",
@@ -267,8 +298,9 @@ class JellyfinClient:
         return r.json()["Id"]
 
     def get_or_create_playlist(self, name: str) -> str:
+        target = self._norm_name(name)
         for pl in self.get_playlists():
-            if pl["Name"].lower() == name.lower():
+            if self._norm_name(pl.get("Name", "")) == target:
                 return pl["Id"]
         return self.create_playlist(name)
 
@@ -378,9 +410,10 @@ class JellyfinClient:
         return data.get("Items", [])
 
     def find_playlist_by_name(self, name: str) -> dict | None:
-        """Find the first Jellyfin playlist whose name matches (case-insensitive)."""
+        """Find the first Jellyfin playlist whose name matches (case-/space-insensitive)."""
+        target = self._norm_name(name)
         for pl in self.get_playlists():
-            if pl.get("Name", "").lower() == name.lower():
+            if self._norm_name(pl.get("Name", "")) == target:
                 return pl
         return None
 
