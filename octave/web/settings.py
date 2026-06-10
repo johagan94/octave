@@ -47,6 +47,12 @@ ALL_KEYS = SECRET_KEYS + KNOB_KEYS
 
 _lock = threading.Lock()
 
+# Keys we ourselves mirrored into os.environ from settings.json (for in-process
+# hot-reload). Tracking them lets a later UI edit update or clear the mirror,
+# instead of being permanently masked by the first value we injected — while
+# still never clobbering a value the container set in the real environment.
+_injected_env_keys: set[str] = set()
+
 
 def _settings_path() -> Path:
     return Path(os.environ.get("SYNC_DATA_DIR", "/app/data")) / "settings.json"
@@ -83,9 +89,13 @@ def get_all_settings() -> dict:
         env_val = os.environ.get(key, "").strip()
         stored = raw.get(key, "")
         effective = env_val or stored
+        # Never return the raw secret to the client — only whether it is set and
+        # a masked preview. The UI sends a new value only when the user types
+        # one; a blank field leaves the stored secret untouched.
         result[key] = {
-            "value": effective,
+            "value": "",
             "masked": _mask(effective) if effective else "",
+            "is_set": bool(effective),
             "source": "env" if env_val else ("file" if stored else "unset"),
         }
     for key in KNOB_KEYS:
@@ -139,11 +149,23 @@ def save_settings(updates: dict) -> dict:
             pass
         log.info("settings saved to %s", path)
 
-        # Also update os.environ for in-process hot-reload of AUTH credentials
-        # and other creds that are read on every request.
-        for key, value in raw.items():
-            if key in ALL_KEYS and not os.environ.get(key, "").strip():
-                os.environ[key] = value
+        # Mirror file values into os.environ for in-process hot-reload (AUTH
+        # creds etc. are read via get_setting on every request). Only touch keys
+        # we previously injected — never overwrite a value the container set in
+        # the real environment (that keeps priority, per documented precedence).
+        # Update or clear our own mirror so repeated UI edits actually take
+        # effect without a container restart.
+        for key in ALL_KEYS:
+            container_env = key in os.environ and key not in _injected_env_keys
+            if container_env:
+                continue
+            new_val = raw.get(key, "")
+            if new_val:
+                os.environ[key] = new_val
+                _injected_env_keys.add(key)
+            elif key in _injected_env_keys:
+                os.environ.pop(key, None)
+                _injected_env_keys.discard(key)
 
         return raw
 

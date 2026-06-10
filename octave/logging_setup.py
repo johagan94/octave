@@ -33,3 +33,9 @@ def configure_logging(log_path: Path | None = None) -> None:
         handlers=handlers,
         force=True,  # allow re-configuration if called twice
     )
+
+    # Silence HTTP client request logging. At INFO these emit full request URLs,
+    # which for Last.fm/ListenBrainz include the API key as a query parameter —
+    # leaking secrets into the log. Warnings and errors still surface.
+    for noisy in ("httpx", "httpcore", "urllib3", "urllib3.connectionpool"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)

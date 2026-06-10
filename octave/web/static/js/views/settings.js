@@ -95,11 +95,16 @@ const SECTIONS = [
 
 // ── Field rendering ───────────────────────────────────────────────────────
 
-function fieldInput(field, value, source) {
+function fieldInput(field, setting) {
+  setting = setting || {};
+  const value = setting.value || "";
+  const source = setting.source;
   const isSecret = field.type === "password";
   const isCheckbox = field.type === "checkbox";
   const isSelect = field.type === "select";
-  const isSet = !!value;
+  // Secrets are never sent to the client; rely on the is_set flag instead of a
+  // (now always-empty) value to know whether one is saved.
+  const isSet = isSecret ? !!setting.is_set : !!value;
   const sourceBadge = source === "env"
     ? h("span.badge.warn", "env")
     : source === "file"
@@ -130,8 +135,12 @@ function fieldInput(field, value, source) {
       h("input", {
         id: field.key,
         type: isSecret ? "password" : field.type === "url" ? "url" : "text",
-        value: value || "",
-        placeholder: field.placeholder || "",
+        // Secret inputs always render blank; a saved secret shows a "leave
+        // blank to keep" hint so Save never has to round-trip the real value.
+        value: isSecret ? "" : (value || ""),
+        placeholder: isSecret && isSet
+          ? "•••••••• (leave blank to keep)"
+          : (field.placeholder || ""),
         autocomplete: "off",
         "data-key": field.key,
         "data-secret": isSecret ? "1" : "",
@@ -158,10 +167,7 @@ function fieldInput(field, value, source) {
 }
 
 function sectionHTML(section, settings) {
-  const fieldEls = section.fields.map(f => {
-    const s = settings[f.key] || {};
-    return fieldInput(f, s.value, s.source);
-  });
+  const fieldEls = section.fields.map(f => fieldInput(f, settings[f.key] || {}));
 
   const actionEls = (section.actions || []).map(a =>
     h("button", { onclick: () => handleAction(a.action) }, a.label)
@@ -668,6 +674,12 @@ function collectUpdates() {
       if (!el) return;
       if (f.type === "checkbox") {
         updates[f.key] = el.checked ? "true" : "false";
+      } else if (f.type === "password") {
+        // Secrets render blank; only send when the user actually typed a new
+        // one. A blank field means "keep existing" — never auto-clear, which
+        // would otherwise wipe every credential on Save.
+        const v = el.value.trim();
+        if (v) updates[f.key] = v;
       } else {
         // Send empty string to clear a previously saved setting
         updates[f.key] = el.value.trim();
