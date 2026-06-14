@@ -13,18 +13,25 @@ def test_secrets_are_masked_not_returned_raw(tmp_path):
     """GET /api/settings must never echo a raw secret back to the client."""
     (tmp_path / "settings.json").write_text(json.dumps({
         "LIDARR_API_KEY": "supersecretkey123",
+        "JELLYFIN_URL": "http://jellyfin:8096",
         "LASTFM_USERNAME": "bob",
     }))
     with patch.dict(os.environ, {"SYNC_DATA_DIR": str(tmp_path)}, clear=False):
         os.environ.pop("LIDARR_API_KEY", None)  # ensure file source
+        os.environ.pop("JELLYFIN_URL", None)
         os.environ.pop("LASTFM_USERNAME", None)
         allv = settings_mod.get_all_settings()
 
+    # Genuinely-sensitive credential: never returned raw.
     secret = allv["LIDARR_API_KEY"]
-    assert secret["value"] == ""                       # never raw
+    assert secret["value"] == ""
     assert secret["is_set"] is True
     assert secret["masked"]                             # has a masked preview
     assert "supersecretkey123" not in secret["masked"]
+    # Non-sensitive config in SECRET_KEYS (service URL) IS returned so the UI
+    # can display it — masking it made saved config look lost.
+    assert allv["JELLYFIN_URL"]["value"] == "http://jellyfin:8096"
+    assert allv["JELLYFIN_URL"]["is_set"] is True
     # Non-secret knobs still return their value for the UI.
     assert allv["LASTFM_USERNAME"]["value"] == "bob"
 

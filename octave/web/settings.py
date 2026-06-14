@@ -45,6 +45,19 @@ KNOB_KEYS = [
 
 ALL_KEYS = SECRET_KEYS + KNOB_KEYS
 
+# The subset of SECRET_KEYS that are genuinely sensitive credentials and must
+# never be returned to the client. The rest of SECRET_KEYS (service URLs, user
+# id, client id, redirect uri, auth username) are not secrets — they're shown in
+# the UI so the user can see and edit them. Masking those too made saved config
+# render blank (and wrongly flagged "required"), which looked like lost config.
+SENSITIVE_KEYS = {
+    "JELLYFIN_API_KEY",
+    "LIDARR_API_KEY",
+    "LISTENBRAINZ_TOKEN",
+    "LASTFM_API_KEY",
+    "AUTH_PASSWORD",
+}
+
 _lock = threading.Lock()
 
 # Keys we ourselves mirrored into os.environ from settings.json (for in-process
@@ -89,11 +102,13 @@ def get_all_settings() -> dict:
         env_val = os.environ.get(key, "").strip()
         stored = raw.get(key, "")
         effective = env_val or stored
-        # Never return the raw secret to the client — only whether it is set and
-        # a masked preview. The UI sends a new value only when the user types
-        # one; a blank field leaves the stored secret untouched.
+        sensitive = key in SENSITIVE_KEYS
+        # Genuinely-sensitive credentials are never returned raw — only a masked
+        # preview + an is_set flag (the UI shows blank with "leave blank to keep"
+        # and sends a new value only when the user types one). Non-sensitive
+        # config (URLs, ids, username) is returned so the UI can display it.
         result[key] = {
-            "value": "",
+            "value": "" if sensitive else effective,
             "masked": _mask(effective) if effective else "",
             "is_set": bool(effective),
             "source": "env" if env_val else ("file" if stored else "unset"),
