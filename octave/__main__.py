@@ -135,9 +135,14 @@ def run_sync(
             try:
                 stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm)
             except Exception as _exc:
-                # Retry once on Spotify token expiry
+                # Retry once on Spotify token expiry. sync_playlist re-wraps the
+                # SpotifyException as a RuntimeError, so check the cause chain too
+                # — otherwise this branch never fires (the bug that let token
+                # expiry kill a long sync). The auth-manager auto-refresh should
+                # prevent expiry in the first place; this is the safety net.
                 import spotipy as _spy
-                if isinstance(_exc, _spy.SpotifyException) and _exc.http_status == 401:
+                _se = _exc if isinstance(_exc, _spy.SpotifyException) else _exc.__cause__
+                if isinstance(_se, _spy.SpotifyException) and _se.http_status == 401:
                     log.warning("Spotify 401 on playlist %s — refreshing token and retrying", playlist_id)
                     from .spotify_auth import refresh_access_token
                     if refresh_access_token():
