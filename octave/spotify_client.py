@@ -15,13 +15,33 @@ def _token_cache_path() -> Path:
     return Path(os.environ.get("SPOTIFY_TOKEN_CACHE", ".spotify_token_cache"))
 
 
+class _PKCETokenManager:
+    """spotipy auth manager that returns an always-valid PKCE access token.
+
+    spotipy calls ``get_access_token`` before every request, so routing it
+    through ``get_valid_access_token`` (which refreshes when the token is within
+    60s of expiry) means a long sync can never hit an expired-token 401
+    mid-run — the previous code baked a static token into the client at
+    creation, which died after ~1 hour.
+    """
+
+    def get_access_token(self, as_dict: bool = False):  # noqa: D401 - spotipy hook
+        from octave.spotify_auth import get_valid_access_token
+        token = get_valid_access_token()
+        if not token:
+            raise spotipy.SpotifyException(
+                401, -1, "Spotify token unavailable; re-connect in Settings"
+            )
+        return token
+
+
 def _try_pkce_client() -> Optional[spotipy.Spotify]:
     """Return a Spotify client from the persisted PKCE token, or None."""
     from octave.spotify_auth import get_valid_access_token
     token = get_valid_access_token()
     if token:
-        log.info("Spotify: using PKCE access token (user-authorized)")
-        return spotipy.Spotify(auth=token)
+        log.info("Spotify: using PKCE access token (user-authorized, auto-refresh)")
+        return spotipy.Spotify(auth_manager=_PKCETokenManager())
     return None
 
 
