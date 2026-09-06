@@ -127,15 +127,25 @@ function onExport(id, name) {
   document.body.removeChild(a);
 }
 
-async function onImport(file) {
-  if (!file) return;
+async function onImport(file, button) {
+  if (!file) {
+    toast("Choose a playlist JSON file first", "error");
+    return;
+  }
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = "Reading file...";
   let body;
   try {
     body = JSON.parse(await file.text());
   } catch (_) {
     toast("Not a valid JSON file", "error");
+    button.disabled = false;
+    button.textContent = "Import";
     return;
   }
+  button.textContent = "Importing...";
+  button.setAttribute("aria-busy", "true");
   try {
     const res = await api.post("/api/playlists/import", body);
     toast(`Imported "${res.name}" — ${res.matched}/${res.total} tracks matched`
@@ -143,6 +153,10 @@ async function onImport(file) {
     refresh();
   } catch (e) {
     toast(`Import failed: ${e.message}`, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Import";
+    button.removeAttribute("aria-busy");
   }
 }
 
@@ -466,7 +480,7 @@ function render() {
       importFileEl = h("input", { type: "file", accept: ".json,.octave.json" }),
     ),
     h("button.primary", {
-      onclick: () => onImport(importFileEl.files[0]),
+      onclick: (event) => onImport(importFileEl.files[0], event.currentTarget),
       style: { marginTop: "4px" },
     }, "Import"),
   );
