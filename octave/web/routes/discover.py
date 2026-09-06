@@ -94,7 +94,7 @@ async def jellyfin_connect(body: dict):
                 url + "/Users/AuthenticateByName",
                 json={"Username": username, "Pw": password},
                 headers={
-                    "X-Emby-Authorization": _JF_AUTH_HEADER,
+                    "Authorization": _JF_AUTH_HEADER,
                     "Content-Type": "application/json",
                 },
             )
@@ -121,7 +121,7 @@ async def jellyfin_connect(body: dict):
         async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT) as client:
             lr = await client.get(
                 url + f"/Users/{user_id}/Views",
-                headers={"X-Emby-Authorization": auth},
+                headers={"Authorization": auth},
             )
         if lr.status_code == 200:
             libraries = [

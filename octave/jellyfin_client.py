@@ -29,7 +29,7 @@ class JellyfinClient:
         self.user_id = cfg["jellyfin"]["user_id"]
         self.music_library_id: Optional[str] = cfg["jellyfin"].get("music_library_id")
         self.headers = {
-            "X-Emby-Authorization": (
+            "Authorization": (
                 f'MediaBrowser Client="Octave", '
                 f'Device="script", DeviceId="octave-01", '
                 f'Version="3.0", Token="{self.api_key}"'
@@ -368,7 +368,7 @@ class JellyfinClient:
             r = requests.post(
                 f"{self.base}/Items/{playlist_id}/Images/Primary",
                 headers={
-                    "X-Emby-Authorization": self.headers["X-Emby-Authorization"],
+                    "Authorization": self.headers["Authorization"],
                     "Content-Type": "image/jpeg",
                 },
                 data=b64,
