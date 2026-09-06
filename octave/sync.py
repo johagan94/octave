@@ -340,11 +340,21 @@ def sync_playlist(
         playlist_num, playlist_total, jf_name, sync_mode,
     )
 
-    try:
-        sp_tracks = get_playlist_tracks(sp, spotify_id)
-    except Exception as exc:
-        log.error("  Spotify: failed to fetch tracks for %s: %s", spotify_id, exc)
-        raise RuntimeError(f"Spotify failed to fetch playlist {spotify_id}: {exc}") from exc
+    if playlist_cfg.get("source") == "local_json" and playlist_cfg.get("source_path"):
+        try:
+            from .playlist_json import load_imported_playlist_tracks
+
+            sp_tracks = load_imported_playlist_tracks(playlist_cfg["source_path"])
+            log.info("  Local JSON playlist %s -> %d tracks", spotify_id, len(sp_tracks))
+        except Exception as exc:
+            log.error("  Local JSON: failed to load tracks for %s: %s", spotify_id, exc)
+            raise RuntimeError(f"Local JSON failed to load playlist {spotify_id}: {exc}") from exc
+    else:
+        try:
+            sp_tracks = get_playlist_tracks(sp, spotify_id)
+        except Exception as exc:
+            log.error("  Spotify: failed to fetch tracks for %s: %s", spotify_id, exc)
+            raise RuntimeError(f"Spotify failed to fetch playlist {spotify_id}: {exc}") from exc
 
     if not sp_tracks:
         log.warning("  Empty playlist, skipping.")
@@ -484,13 +494,14 @@ def sync_playlist(
             log.info("  Jellyfin playlist already up to date.")
 
         # ── Cover art ─────────────────────────────────────────────────────
-        try:
-            cover_bytes = get_playlist_cover(sp, spotify_id)
-            if cover_bytes:
-                jf.set_playlist_image(pl_id, cover_bytes)
-                log.debug("  Cover art updated")
-        except Exception as exc:
-            log.debug("  Cover art skipped: %s", exc)
+        if playlist_cfg.get("source") != "local_json":
+            try:
+                cover_bytes = get_playlist_cover(sp, spotify_id)
+                if cover_bytes:
+                    jf.set_playlist_image(pl_id, cover_bytes)
+                    log.debug("  Cover art updated")
+            except Exception as exc:
+                log.debug("  Cover art skipped: %s", exc)
     except Exception as exc:
         log.error("  Jellyfin: failed to update playlist: %s", exc)
         raise RuntimeError(f"Jellyfin failed to update playlist {jf_name}: {exc}") from exc

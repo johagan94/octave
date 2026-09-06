@@ -68,6 +68,8 @@ class PlaylistEntry(BaseModel):
     spotify_playlist_id: str
     jellyfin_playlist_name: Optional[str] = None
     sync_mode: Literal["add_only", "full_sync", "rebuild"] = "add_only"
+    source: Literal["spotify", "local_json"] = "spotify"
+    source_path: Optional[str] = None
     cover_url: Optional[str] = None
     min_interval_hours: Optional[int] = None
     configured: bool = True

@@ -64,7 +64,19 @@ def run_sync(
     track_cache = TrackCache()
     track_cache.load()
 
-    sp = make_spotify_client(cfg)
+    configured_playlists = cfg.get("playlists", []) or []
+    need_spotify = any(p.get("source", "spotify") != "local_json" for p in configured_playlists)
+    has_local_json = any(
+        p.get("source") == "local_json" and p.get("source_path")
+        for p in configured_playlists
+    )
+    try:
+        sp = make_spotify_client(cfg) if need_spotify else None
+    except Exception:
+        if not has_local_json:
+            raise
+        log.warning("Spotify authorization unavailable; local JSON playlists can still sync")
+        sp = None
     jf = JellyfinClient(cfg, track_cache=track_cache)
     lidarr_cfg = cfg.get("lidarr", {})
     lidarr_enabled = bool(
@@ -94,14 +106,33 @@ def run_sync(
 
     if sync_all:
         log.info("SYNC_ALL_PLAYLISTS enabled — discovering all account playlists")
-        all_playlists = get_user_playlists(sp)
         try:
-            cache_dir = os.environ.get("SYNC_DATA_DIR", "data")
-            os.makedirs(cache_dir, exist_ok=True)
-            with open(os.path.join(cache_dir, "discovered_playlists.json"), "w") as fh:
-                json.dump(all_playlists, fh, indent=2)
-        except Exception:
-            log.exception("Could not cache discovered Spotify playlists")
+            if sp is None:
+                sp = make_spotify_client(cfg)
+            all_playlists = get_user_playlists(sp)
+            try:
+                cache_dir = os.environ.get("SYNC_DATA_DIR", "data")
+                os.makedirs(cache_dir, exist_ok=True)
+                with open(os.path.join(cache_dir, "discovered_playlists.json"), "w") as fh:
+                    json.dump(all_playlists, fh, indent=2)
+            except Exception:
+                log.exception("Could not cache discovered Spotify playlists")
+        except Exception as exc:
+            local_playlists = [
+                p for p in configured_playlists
+                if p.get("source") == "local_json" and p.get("source_path")
+            ]
+            if local_playlists:
+                log.warning(
+                    "Spotify discovery failed (%s); syncing %d local JSON playlist(s) instead",
+                    exc, len(local_playlists),
+                )
+                all_playlists = local_playlists
+            else:
+                raise RuntimeError(
+                    "SYNC_ALL_PLAYLISTS requires Spotify access and no local JSON playlists are configured. "
+                    "Import playlist JSON or reconnect Spotify."
+                ) from exc
         if not all_playlists:
             log.error("SYNC_ALL_PLAYLISTS is on but no playlists were discovered "
                       "(is Spotify connected via PKCE?)")

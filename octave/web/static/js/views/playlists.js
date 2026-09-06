@@ -460,7 +460,7 @@ function render() {
   const importCard = h("div.card",
     h("div.card-row",
       h("h2", { style: { margin: 0 } }, "Import playlist"),
-      h("span", { style: { color: "var(--text-dim)", fontSize: "13px" } }, "Restore from an Octave JSON backup"),
+      h("span", { style: { color: "var(--text-dim)", fontSize: "13px" } }, "Restore from Octave or Spotify JSON"),
     ),
     h("div.field", { style: { marginTop: "8px" } },
       importFileEl = h("input", { type: "file", accept: ".json,.octave.json" }),

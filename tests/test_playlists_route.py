@@ -67,3 +67,58 @@ def test_discovered_playlists_falls_back_to_missing_tracks(tmp_path):
         "sync_mode": "add_only",
         "configured": False,
     }]
+
+
+def test_import_playlist_registers_local_json_source(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"playlists": []}))
+
+    class FakeJellyfin:
+        user_id = "user-1"
+
+        def _build_index(self):
+            pass
+
+        def _get(self, *args, **kwargs):
+            raise RuntimeError("missing direct id")
+
+        def find_track(self, title, artist):
+            return {"Id": f"jf-{title}-{artist}"}
+
+        def get_or_create_playlist(self, name):
+            return "playlist-jf-id"
+
+        def add_to_playlist(self, playlist_id, item_ids):
+            self.added = item_ids
+
+    env = {
+        "SYNC_CONFIG": str(config_path),
+        "SYNC_DATA_DIR": str(tmp_path),
+    }
+    body = {
+        "playlistName": "Offline Mix",
+        "playlistUri": "spotify:playlist:playlist123",
+        "items": [{
+            "track": {
+                "trackName": "Song A",
+                "artistName": "Artist A",
+                "albumName": "Album A",
+                "trackUri": "spotify:track:track123",
+            },
+        }],
+    }
+
+    with patch.dict(os.environ, env, clear=False), \
+            patch.object(playlists, "_jf_client", return_value=FakeJellyfin()):
+        result = playlists.import_playlist(body)
+
+    cfg = json.loads(config_path.read_text())
+    assert result.data["name"] == "Offline Mix"
+    assert result.data["spotify_id"] == "playlist123"
+    assert cfg["playlists"] == [{
+        "spotify_playlist_id": "playlist123",
+        "jellyfin_playlist_name": "Offline Mix",
+        "sync_mode": "add_only",
+        "source": "local_json",
+        "source_path": str(tmp_path / "imported_playlists" / "playlist123.json"),
+    }]

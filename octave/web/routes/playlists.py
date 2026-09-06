@@ -51,6 +51,8 @@ def _enrich_playlist(entry: dict) -> PlaylistEntry:
     result = PlaylistEntry(**{k: v for k, v in entry.items()
                               if k in PlaylistEntry.model_fields})
     spotify_id = entry.get("spotify_playlist_id", "")
+    if entry.get("source") == "local_json":
+        return result
     if spotify_id in _cover_cache:
         result.cover_url = _cover_cache[spotify_id]
     elif not _cover_cache.get(spotify_id, ...):
@@ -315,62 +317,109 @@ def export_playlist(spotify_id: str):
 
 @router.post("/playlists/import")
 def import_playlist(body: dict = Body(...)):
-    """Recreate a Jellyfin playlist from an Octave JSON backup.
+    """Import playlist JSON and recreate Jellyfin playlists.
 
-    Tries direct Jellyfin ID lookup first; falls back to fuzzy title+artist
-    matching for tracks whose IDs have changed (library rescan, migration).
+    Accepts Octave backups and Spotify playlist JSON exports, including files
+    with a top-level ``playlists`` array. Canonical copies are saved in the data
+    dir and registered in config so future sync runs can use JSON sources
+    without calling Spotify.
     """
-    if body.get("version") != 1 or "playlist" not in body:
-        raise HTTPException(400, "Not a valid Octave export (expected version:1 + playlist key)")
+    try:
+        from ...playlist_json import save_imported_playlists
 
-    pl_data = body["playlist"]
-    name = (pl_data.get("name") or "").strip()
-    tracks = pl_data.get("tracks") or []
-    if not name:
-        raise HTTPException(400, "playlist.name is required")
+        imported = save_imported_playlists(body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     jf = _jf_client()
     jf._build_index()
 
-    matched_ids: list[str] = []
-    skipped = 0
-    for track in tracks:
-        jf_id = track.get("jellyfin_id")
-        found = False
+    cfg = _read_config()
+    playlists = cfg.setdefault("playlists", [])
+    imported_rows: list[dict] = []
+    total_matched = 0
+    total_skipped = 0
+    total_tracks = 0
 
-        if jf_id:
-            try:
-                item = jf._get(f"/Users/{jf.user_id}/Items/{jf_id}", Fields="Name")
-                if item.get("Name"):
-                    matched_ids.append(jf_id)
-                    found = True
-            except Exception:
-                pass
+    for source_path, canonical in imported:
+        pl_data = canonical["playlist"]
+        name = (pl_data.get("name") or "").strip()
+        tracks = pl_data.get("tracks") or []
+        if not name:
+            raise HTTPException(400, "playlist.name is required")
 
-        if not found:
-            title = track.get("title", "")
-            artist = track.get("artist", "")
-            if title and artist:
-                result = jf.find_track(title, artist)
-                if result:
-                    matched_ids.append(result["Id"])
-                    found = True
+        matched_ids: list[str] = []
+        skipped = 0
+        for track in tracks:
+            jf_id = track.get("jellyfin_id")
+            found = False
 
-        if not found:
-            skipped += 1
+            if jf_id:
+                try:
+                    item = jf._get(f"/Users/{jf.user_id}/Items/{jf_id}", Fields="Name")
+                    if item.get("Name"):
+                        matched_ids.append(jf_id)
+                        found = True
+                except Exception:
+                    pass
 
-    pl_id = jf.get_or_create_playlist(name)
-    if matched_ids:
-        jf.add_to_playlist(pl_id, matched_ids)
+            if not found:
+                title = track.get("title") or track.get("name", "")
+                artists = track.get("artists") or []
+                artist = track.get("artist") or (artists[0].get("name") if artists else "")
+                if title and artist:
+                    result = jf.find_track(title, artist)
+                    if result:
+                        matched_ids.append(result["Id"])
+                        found = True
 
+            if not found:
+                skipped += 1
+
+        pl_id = jf.get_or_create_playlist(name)
+        if matched_ids:
+            jf.add_to_playlist(pl_id, matched_ids)
+
+        spotify_id = pl_data["spotify_id"]
+        entry = {
+            "spotify_playlist_id": spotify_id,
+            "jellyfin_playlist_name": name,
+            "sync_mode": "add_only",
+            "source": "local_json",
+            "source_path": str(source_path),
+        }
+        for idx, existing in enumerate(playlists):
+            if existing.get("spotify_playlist_id") == spotify_id:
+                playlists[idx] = {**existing, **entry}
+                break
+        else:
+            playlists.append(entry)
+
+        row = {
+            "playlist_id": pl_id,
+            "name": name,
+            "spotify_id": spotify_id,
+            "matched": len(matched_ids),
+            "skipped": skipped,
+            "total": len(tracks),
+        }
+        imported_rows.append(row)
+        total_matched += row["matched"]
+        total_skipped += row["skipped"]
+        total_tracks += row["total"]
+
+    _write_config(cfg)
+    first = imported_rows[0]
     return ok({
-        "playlist_id": pl_id,
-        "name": name,
-        "matched": len(matched_ids),
-        "skipped": skipped,
-        "total": len(tracks),
+        "playlist_id": first["playlist_id"],
+        "name": first["name"] if len(imported_rows) == 1 else f"{len(imported_rows)} playlists",
+        "spotify_id": first["spotify_id"],
+        "source": "local_json",
+        "matched": total_matched,
+        "skipped": total_skipped,
+        "total": total_tracks,
+        "imported": imported_rows,
     })
-
 
 # ── Smart playlist generator ──────────────────────────────────────────────────
 
