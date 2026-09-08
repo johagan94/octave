@@ -58,7 +58,10 @@ def _enrich_playlist(entry: dict) -> PlaylistEntry:
     elif not _cover_cache.get(spotify_id, ...):
         # Lazy-fetch on first view
         try:
-            from ...spotify_client import get_playlist_metadata
+            from ...spotify_client import (
+                get_playlist_metadata,
+                get_public_playlist_metadata,
+            )
             import spotipy
             from spotipy.oauth2 import SpotifyOAuth
 
@@ -88,11 +91,11 @@ def _enrich_playlist(entry: dict) -> PlaylistEntry:
 
             if sp is not None:
                 meta = get_playlist_metadata(sp, spotify_id)
-                _cover_cache[spotify_id] = meta.get("cover_url")
-                result.cover_url = meta.get("cover_url")
-                _save_cover_cache()
             else:
-                _cover_cache[spotify_id] = None
+                meta = get_public_playlist_metadata(spotify_id)
+            _cover_cache[spotify_id] = meta.get("cover_url")
+            result.cover_url = meta.get("cover_url")
+            _save_cover_cache()
         except Exception as exc:
             log.debug("Cover fetch skipped for %s: %s", spotify_id, exc)
             _cover_cache[spotify_id] = None

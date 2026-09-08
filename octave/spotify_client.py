@@ -1,9 +1,14 @@
-"""Spotify PKCE client factory and playlist/album fetching."""
+"""Spotify PKCE client factory and playlist/album fetching.
+
+Public playlist reads fall back to SpotAPI when Spotify's Web API rejects
+the developer application with HTTP 403. SpotAPI mirrors the web player's
+GraphQL requests and therefore does not require a Premium app owner.
+"""
 
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Iterable, Optional
 
 import requests
 import spotipy
@@ -45,15 +50,28 @@ def _try_pkce_client() -> Optional[spotipy.Spotify]:
     return None
 
 
-def make_spotify_client(cfg: dict) -> spotipy.Spotify:
-    """Return an authenticated Spotify client using the stored PKCE token."""
+class _SpotAPIPublicOnlyClient:
+    """Spotipy-shaped trigger for public playlist reads without OAuth."""
+
+    @staticmethod
+    def _fallback(*args, **kwargs):
+        raise spotipy.SpotifyException(
+            403, -1, "No Spotify OAuth token; use the public SpotAPI fallback"
+        )
+
+    playlist_items = _fallback
+    playlist = _fallback
+
+
+def make_spotify_client(cfg: dict) -> spotipy.Spotify | _SpotAPIPublicOnlyClient:
+    """Return a PKCE client, or a public-only SpotAPI fallback client."""
     sp = _try_pkce_client()
     if sp is not None:
         return sp
-    raise RuntimeError(
-        "Spotify not authorized via PKCE. "
-        "Open Octave Settings and click 'Connect Spotify'."
+    log.warning(
+        "Spotify is not authorized via PKCE; public playlists will use SpotAPI"
     )
+    return _SpotAPIPublicOnlyClient()
 
 
 def get_user_playlists(sp: spotipy.Spotify) -> list[dict]:
@@ -94,14 +112,23 @@ def get_user_playlists(sp: spotipy.Spotify) -> list[dict]:
 def get_playlist_tracks(sp: spotipy.Spotify, playlist_id: str) -> list[dict]:
     """Return every track in a Spotify playlist (handles pagination)."""
     tracks: list[dict] = []
-    result = sp.playlist_items(
-        playlist_id,
-        fields=(
-            "items(track(id,name,artists(id,name),"
-            "album(id,name,album_type,artists(id,name),total_tracks))),next"
-        ),
-        additional_types=["track"],
-    )
+    try:
+        result = sp.playlist_items(
+            playlist_id,
+            fields=(
+                "items(track(id,name,artists(id,name),"
+                "album(id,name,album_type,artists(id,name),total_tracks))),next"
+            ),
+            additional_types=["track"],
+        )
+    except spotipy.SpotifyException as exc:
+        if exc.http_status != 403:
+            raise
+        log.warning(
+            "Spotify Web API denied playlist %s (403); retrying via SpotAPI",
+            playlist_id,
+        )
+        return _get_spotapi_playlist_tracks(playlist_id)
     while result:
         for item in result.get("items", []):
             track = item.get("track")
@@ -124,7 +151,16 @@ def get_album_tracks(sp: spotipy.Spotify, album_id: str) -> list[dict]:
 
 def get_playlist_metadata(sp: spotipy.Spotify, playlist_id: str) -> dict:
     """Return playlist name, cover image URL, and track count."""
-    data = sp.playlist(playlist_id, fields="name,images,description,tracks(total)")
+    try:
+        data = sp.playlist(playlist_id, fields="name,images,description,tracks(total)")
+    except spotipy.SpotifyException as exc:
+        if exc.http_status != 403:
+            raise
+        log.warning(
+            "Spotify Web API denied playlist metadata %s (403); retrying via SpotAPI",
+            playlist_id,
+        )
+        return _get_spotapi_playlist_metadata(playlist_id)
     images = sorted(
         data.get("images", []),
         key=lambda i: i.get("width", 0) or 0,
@@ -135,6 +171,111 @@ def get_playlist_metadata(sp: spotipy.Spotify, playlist_id: str) -> dict:
         "cover_url": images[0]["url"] if images else None,
         "description": data.get("description", ""),
         "track_count": data.get("tracks", {}).get("total", 0),
+    }
+
+
+def get_public_playlist_metadata(playlist_id: str) -> dict:
+    """Read public playlist metadata through SpotAPI without OAuth."""
+    return _get_spotapi_playlist_metadata(playlist_id)
+
+
+def _spotapi_playlist(playlist_id: str):
+    try:
+        from spotapi import PublicPlaylist
+    except ImportError as exc:
+        raise RuntimeError(
+            "SpotAPI fallback is unavailable; install the project requirements"
+        ) from exc
+    return PublicPlaylist(playlist_id)
+
+
+def _spotapi_root(payload: dict) -> dict:
+    root = (payload.get("data") or {}).get("playlistV2")
+    if not isinstance(root, dict):
+        raise RuntimeError("SpotAPI returned an invalid playlist response")
+    return root
+
+
+def _spotify_id(uri: Any, kind: str) -> str:
+    prefix = f"spotify:{kind}:"
+    return uri[len(prefix):] if isinstance(uri, str) and uri.startswith(prefix) else ""
+
+
+def _spotapi_image_sources(root: dict) -> Iterable[dict]:
+    images = root.get("images") or {}
+    items = images.get("items", []) if isinstance(images, dict) else images
+    for item in items or []:
+        sources = item.get("sources", []) if isinstance(item, dict) else []
+        yield from sources or []
+
+
+def _spotapi_track(item: dict) -> Optional[dict]:
+    node = item.get("itemV2") or item.get("item") or item
+    data = node.get("data", node) if isinstance(node, dict) else {}
+    track_id = _spotify_id(data.get("uri"), "track")
+    if not track_id:
+        return None
+
+    artist_nodes = (data.get("artists") or {}).get("items", [])
+    artists = []
+    for artist_node in artist_nodes:
+        artist = artist_node.get("profile", artist_node)
+        artists.append({
+            "id": _spotify_id(artist_node.get("uri"), "artist"),
+            "name": artist.get("name", ""),
+        })
+
+    album_node = data.get("albumOfTrack") or data.get("album") or {}
+    album_artists = []
+    for artist_node in (album_node.get("artists") or {}).get("items", []):
+        profile = artist_node.get("profile", artist_node)
+        album_artists.append({
+            "id": _spotify_id(artist_node.get("uri"), "artist"),
+            "name": profile.get("name", ""),
+        })
+
+    return {
+        "id": track_id,
+        "name": data.get("name", ""),
+        "artists": artists,
+        "album": {
+            "id": _spotify_id(album_node.get("uri"), "album"),
+            "name": album_node.get("name", ""),
+            "album_type": album_node.get("type", "album"),
+            "artists": album_artists or artists,
+            "total_tracks": album_node.get("trackCount", 0),
+        },
+    }
+
+
+def _get_spotapi_playlist_tracks(playlist_id: str) -> list[dict]:
+    playlist = _spotapi_playlist(playlist_id)
+    tracks = []
+    for content in playlist.paginate_playlist():
+        for item in content.get("items", []):
+            track = _spotapi_track(item)
+            if track:
+                tracks.append(track)
+    log.info("  SpotAPI playlist %s -> %d tracks", playlist_id, len(tracks))
+    return tracks
+
+
+def _get_spotapi_playlist_metadata(playlist_id: str) -> dict:
+    payload = dict(_spotapi_playlist(playlist_id).get_playlist_info(limit=1))
+    root = _spotapi_root(payload)
+    description = root.get("description", "")
+    if isinstance(description, dict):
+        description = description.get("text", "")
+    images = sorted(
+        _spotapi_image_sources(root),
+        key=lambda image: image.get("width", 0) or 0,
+        reverse=True,
+    )
+    return {
+        "name": root.get("name", ""),
+        "cover_url": images[0].get("url") if images else None,
+        "description": description,
+        "track_count": (root.get("content") or {}).get("totalCount", 0),
     }
 
 
