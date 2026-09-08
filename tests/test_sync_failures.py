@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -117,14 +118,21 @@ def test_sync_playlist_records_missing_without_lidarr(tmp_path):
     assert (tmp_path / "missing_tracks.json").exists()
 
 
-def test_sync_playlist_skips_lidarr_batch_when_album_catalogue_fails(tmp_path):
+def test_sync_playlist_uses_scoped_lidarr_fallback_when_album_catalogue_fails(tmp_path):
     class FailingLidarr:
+        album_catalog_unavailable = False
+
         def get_albums(self):
+            self.album_catalog_unavailable = True
             raise RuntimeError("catalogue HTTP 500")
+
+        def get_artists(self):
+            return []
 
     with patch.dict(os.environ, {"SYNC_DATA_DIR": str(tmp_path)}, clear=False), \
             patch.object(sync_mod, "get_playlist_tracks", return_value=[_track()]), \
-            patch.object(sync_mod, "get_playlist_cover", return_value=None):
+            patch.object(sync_mod, "get_playlist_cover", return_value=None), \
+            patch.object(sync_mod, "request_album_in_lidarr") as request_album:
         stats = sync_playlist(
             {"spotify_playlist_id": "playlist-id", "jellyfin_playlist_name": "Target"},
             sp=object(),
@@ -136,8 +144,50 @@ def test_sync_playlist_skips_lidarr_batch_when_album_catalogue_fails(tmp_path):
             playlist_total=1,
         )
 
-    assert stats["albums_requested"] == 0
+    assert request_album.call_count == 1
+    assert stats["albums_requested"] == 1
     assert stats["missing"] == 1
+
+
+def test_scoped_lidarr_fallback_does_not_search_monitored_album():
+    class ScopedLidarr:
+        album_catalog_unavailable = True
+        _run_artist_lock_guard = threading.Lock()
+        _run_artist_locks = {}
+        _run_artist_cache = {}
+
+        def find_album_in_library(self, *args):
+            raise AssertionError("global album lookup should be skipped")
+
+        def find_artist_in_library(self, name):
+            return {"id": 42, "artistName": name}
+
+        def get_artist_albums(self, artist_id):
+            assert artist_id == 42
+            return [{"id": 99, "title": "Album", "monitored": True}]
+
+        def find_album_in_artist(self, artist_id, album_name, albums):
+            return albums[0]
+
+        def monitor_and_search_album(self, album_id):
+            raise AssertionError("monitored album should not be searched again")
+
+    state = {"lidarr_requested_albums": {}, "current_run": "run"}
+    with patch.object(sync_mod, "save_state"):
+        sync_mod.request_album_in_lidarr(
+            lidarr=ScopedLidarr(),
+            mb=None,
+            spotify_album_id="album-id",
+            spotify_album_name="Album",
+            spotify_artist_id="artist-id",
+            spotify_artist_name="Artist",
+            state=state,
+        )
+
+    assert state["lidarr_requested_albums"]["album-id"] == {
+        "status": "already_monitored",
+        "lidarr_id": 99,
+    }
 
 
 def test_missing_tracks_store_is_written_once_at_end(tmp_path):

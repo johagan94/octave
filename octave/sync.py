@@ -159,9 +159,17 @@ def request_album_in_lidarr(
     log.debug("  → [%s] %s – %s", status or "new", spotify_artist_name, spotify_album_name)
 
     # ── Check if album already exists in Lidarr library ───────────────────
-    existing = lidarr.find_album_in_library(
-        spotify_album_name, spotify_artist_name, spotify_artist_name
-    )
+    existing = None
+    if not lidarr.album_catalog_unavailable:
+        try:
+            existing = lidarr.find_album_in_library(
+                spotify_album_name, spotify_artist_name, spotify_artist_name
+            )
+        except Exception as exc:
+            # Some Lidarr releases fail the unfiltered /album endpoint when a
+            # catalogue row is malformed. Continue through the artist-scoped
+            # endpoint, which isolates that failure and remains idempotent.
+            log.debug("  Global Lidarr album lookup unavailable: %s", exc)
     if existing:
         if not existing.get("monitored"):
             lidarr.monitor_and_search_album(existing["id"])
@@ -263,7 +271,30 @@ def request_album_in_lidarr(
                 log.warning("    Refresh error: %s", exc)
 
     # ── Try to find the album right now ───────────────────────────────────
-    albums = lidarr.get_artist_albums(artist_id)
+    try:
+        albums = lidarr.get_artist_albums(artist_id)
+    except Exception as exc:
+        dedup_key = f"album_list_fail:{artist_id}"
+        if dedup_key not in lidarr._logged_failures:
+            log.warning(
+                "    Lidarr album lookup failed for %s (id=%d): %s",
+                spotify_artist_name, artist_id, exc,
+            )
+            lidarr._logged_failures.add(dedup_key)
+        else:
+            log.debug(
+                "    Lidarr album lookup still unavailable for artist id=%d",
+                artist_id,
+            )
+        with _state_lock:
+            requested[spotify_album_id] = {
+                "status": "album_lookup_failed",
+                "artist_id": artist_id,
+                "run": state["current_run"],
+                "attempts": prior_attempts + 1,
+            }
+        save_state(state)
+        return
 
     if not albums:
         _refresh_if_budget()
@@ -298,6 +329,15 @@ def request_album_in_lidarr(
                 "run":       state["current_run"],
                 "attempts":  prior_attempts + 1,
             }
+        save_state(state)
+        return
+
+    if album.get("monitored"):
+        with _state_lock:
+            requested[spotify_album_id] = {
+                "status": "already_monitored", "lidarr_id": album["id"],
+            }
+        log.info("    Already monitored (id=%d)", album["id"])
         save_state(state)
         return
 
@@ -537,15 +577,6 @@ def sync_playlist(
             "albums_requested": 0,
             "waiting_lidarr": len(waiting_lidarr),
         }
-    if getattr(lidarr, "album_catalog_unavailable", False):
-        log.debug("  Lidarr album catalogue remains unavailable; skipping requests")
-        return {
-            "matched": matched_count,
-            "missing": missing_count,
-            "albums_requested": 0,
-            "waiting_lidarr": len(waiting_lidarr),
-        }
-
     seen_albums: set[str] = set()
     album_requests: list[dict] = []
     current_run = state.get("current_run", "")
@@ -578,7 +609,7 @@ def sync_playlist(
         if (
             existing.get("status") in (
                 "artist_not_found", "artist_add_failed",
-                "artist_added", "album_pending",
+                "artist_added", "album_pending", "album_lookup_failed",
             )
             and existing.get("run") != current_run
         ):
@@ -603,18 +634,28 @@ def sync_playlist(
             # thousands of queued albums.
             lidarr.get_albums()
         except Exception as exc:
-            log.error(
-                "  Lidarr album catalogue unavailable; skipping %d album "
-                "request(s) this run: %s",
+            log.warning(
+                "  Lidarr global album catalogue unavailable; using "
+                "artist-scoped fallback for %d album request(s): %s",
                 len(album_requests), exc,
             )
-            save_state(state)
-            return {
-                "matched": matched_count,
-                "missing": missing_count,
-                "albums_requested": 0,
-                "waiting_lidarr": len(waiting_lidarr),
-            }
+            try:
+                # Warm this once before worker threads so they do not each
+                # fetch the full artist catalogue concurrently.
+                lidarr.get_artists()
+            except Exception as artist_exc:
+                log.error(
+                    "  Lidarr artist catalogue unavailable; skipping %d album "
+                    "request(s) this run: %s",
+                    len(album_requests), artist_exc,
+                )
+                save_state(state)
+                return {
+                    "matched": matched_count,
+                    "missing": missing_count,
+                    "albums_requested": 0,
+                    "waiting_lidarr": len(waiting_lidarr),
+                }
         with concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_LIDARR_WORKERS) as pool:
             futures = [
                 pool.submit(

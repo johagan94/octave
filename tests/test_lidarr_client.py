@@ -80,3 +80,15 @@ def test_album_catalogue_failure_is_cached_for_the_run():
 
     assert request.call_count == 1
     assert c.album_catalog_unavailable is True
+
+
+def test_artist_album_failure_is_cached_for_the_run():
+    c = _client()
+    with patch.object(c, "_get", side_effect=RuntimeError("HTTP 500")) as request:
+        for _ in range(2):
+            try:
+                c.get_artist_albums(42)
+            except RuntimeError:
+                pass
+
+    assert request.call_count == 1

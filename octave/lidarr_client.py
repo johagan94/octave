@@ -31,6 +31,9 @@ class LidarrClient:
         # Per-run cache of an artist's albums, so processing N missing albums by
         # the same artist costs one ``GET /album?artistId=`` instead of N.
         self._run_artist_albums_cache: dict[int, list[dict]] = {}
+        self._run_artist_album_errors: dict[int, Exception] = {}
+        self._run_artist_album_lock_guard = threading.Lock()
+        self._run_artist_album_locks: dict[int, threading.Lock] = {}
         # Artists already sent a RefreshArtist command this run. RefreshArtist is
         # Lidarr's heaviest command (per-artist MusicBrainz hit); without this,
         # every missing album by an artist queued its own refresh — hundreds per
@@ -221,10 +224,34 @@ class LidarrClient:
         cached = self._run_artist_albums_cache.get(artist_id)
         if cached is not None:
             return cached
-        albums = self._get("/album", artistId=artist_id)
-        albums = albums if isinstance(albums, list) else []
-        self._run_artist_albums_cache[artist_id] = albums
-        return albums
+        prior_error = self._run_artist_album_errors.get(artist_id)
+        if prior_error is not None:
+            raise RuntimeError(
+                f"Lidarr albums for artist {artist_id} are unavailable this run"
+            ) from prior_error
+
+        with self._run_artist_album_lock_guard:
+            artist_lock = self._run_artist_album_locks.setdefault(
+                artist_id, threading.Lock()
+            )
+
+        with artist_lock:
+            cached = self._run_artist_albums_cache.get(artist_id)
+            if cached is not None:
+                return cached
+            prior_error = self._run_artist_album_errors.get(artist_id)
+            if prior_error is not None:
+                raise RuntimeError(
+                    f"Lidarr albums for artist {artist_id} are unavailable this run"
+                ) from prior_error
+            try:
+                albums = self._get("/album", artistId=artist_id)
+            except Exception as exc:
+                self._run_artist_album_errors[artist_id] = exc
+                raise
+            albums = albums if isinstance(albums, list) else []
+            self._run_artist_albums_cache[artist_id] = albums
+            return albums
 
     def find_album_by_mbid(
         self, release_group_mbid: str, albums: list[dict]
