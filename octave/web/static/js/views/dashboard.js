@@ -11,6 +11,7 @@ let playlistCache = [];
 
 function badgeFor(intg) {
   if (!intg.configured) return h("span.badge.dim", "not configured");
+  if (intg.detail?.mode === "spotapi") return h("span.badge.warn", "public only");
   if (intg.reachable)   return h("span.badge.ok", "reachable");
   return h("span.badge.error", "unreachable");
 }
@@ -22,6 +23,10 @@ function integrationCard(name, intg) {
       badgeFor(intg),
     ),
     h("div.health",
+      intg.detail?.mode && h("div.row",
+        h("small", "mode"),
+        h("strong", intg.detail.mode === "spotapi" ? "SpotAPI" : intg.detail.mode),
+      ),
       intg.detail?.version && h("div.row",
         h("small", "version"),
         h("strong", intg.detail.version),

@@ -87,11 +87,6 @@ def load_config() -> dict:
     cfg.setdefault("spotify", {})
     from .spotify_auth import DEFAULT_REDIRECT_URI, resolve_client_id
     client_id = resolve_client_id(_get_optional_credential("SPOTIFY_CLIENT_ID"))
-    if not client_id:
-        raise ConfigError(
-            "Missing Spotify Client ID. Configure it in the UI Settings page, "
-            "or set SPOTIFY_CLIENT_ID in the container environment."
-        )
     cfg["spotify"]["client_id"] = client_id
     cfg["spotify"]["client_secret"] = _get_optional_credential("SPOTIFY_CLIENT_SECRET")
     cfg["spotify"]["redirect_uri"] = (

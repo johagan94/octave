@@ -6,7 +6,7 @@ import { h } from "../h.js";
 import { toast } from "../toast.js";
 
 let timer = 0;
-let lastKey = "";  // diff key — only rebuild DOM when data changes
+let lastKey = "";  // diff key - only rebuild DOM when data changes
 
 function step(title, status, body) {
   return h("div.setup-step" + (status === "done" ? ".done" : ""),
@@ -43,25 +43,25 @@ function spotifyStep(intg) {
   if (!intg.configured) {
     return step("Connect Spotify", "todo",
       h("div",
-        h("p", "Go to ", h("strong", "Settings -> Spotify"), " and click ", h("strong", "Connect Spotify"), ". No developer account needed — it uses the bundled app with PKCE OAuth."),
+        h("p", "Public playlists are available through SpotAPI. Configure Spotify OAuth only if you need private playlists or account discovery."),
         h("p", h("small", { style: { color: "var(--text-dim)" } },
-          "Advanced: to use your own Spotify app, create one at ",
+          "Create an OAuth app at ",
           h("a", { href: "https://developer.spotify.com/dashboard", target: "_blank" }, "developer.spotify.com/dashboard"),
-          ", add ", h("code", "http://127.0.0.1:8888/callback"), " to its Redirect URIs, and set your Client ID in Settings."),
+          ", add Octave's configured callback URL, and set its Client ID in Settings."),
         ),
       ),
     );
   }
 
-  // Client credentials mode — public playlists only, no user token
-  if (intg.detail && intg.detail.mode === "client_credentials") {
-    return step("Spotify OAuth", "partial",
+  if (intg.detail && intg.detail.mode === "spotapi") {
+    const oauthAvailable = intg.detail.oauth_client_id_available;
+    return step("Spotify", "partial",
       h("div",
-        h("p", "Client credentials active — ", h("strong", "public playlists only"), ". ",
-          "Go to ", h("strong", "Settings -> Spotify"), " and click ", h("strong", "Connect Spotify"), " to authorize with your account for full access."),
+        h("p", h("strong", "Public playlists ready via SpotAPI."), " Spotify OAuth is not connected."),
         h("p", h("small", { style: { color: "var(--text-dim)" } },
-          "PKCE OAuth grants access to private playlists, saved tracks, and library. ",
-          "No developer account needed — uses the bundled Spotify app."),
+          oauthAvailable
+            ? "Connect Spotify in Settings for private playlists and account discovery."
+            : "Add an OAuth Client ID in Settings to enable private playlists and account discovery."),
         ),
       ),
     );
@@ -71,8 +71,7 @@ function spotifyStep(intg) {
     return step("Spotify OAuth", "pending",
       h("div",
         h("p", "Credentials are set, but no token cache exists. ",
-          "Run a one-shot sync from the Dashboard's ", h("strong", "Sync now"), " button. ",
-          "Your browser will open the Spotify auth page automatically (or check the logs for the URL)."),
+          "Open ", h("strong", "Settings -> Spotify"), " and select ", h("strong", "Connect Spotify"), "."),
       ),
     );
   }
@@ -111,7 +110,7 @@ function jellyfinStep(intg) {
 function lidarrStep(intg) {
   if (!intg.configured) {
     return step("Lidarr", "todo",
-      h("p", "Set ", h("code", "LIDARR_URL"), " and ", h("code", "LIDARR_API_KEY"), " in ", h("code", ".env"), ". (Optional — disable Lidarr by leaving these unset, but missing albums won't be auto-requested.)"),
+      h("p", "Set ", h("code", "LIDARR_URL"), " and ", h("code", "LIDARR_API_KEY"), " in ", h("code", ".env"), ". (Optional - disable Lidarr by leaving these unset, but missing albums won't be auto-requested.)"),
     );
   }
   if (!intg.reachable) {
@@ -127,7 +126,7 @@ function buildDOM(status, containerRef) {
   containerRef.innerHTML = "";
   containerRef.appendChild(h("h2", "Health"));
   containerRef.appendChild(h("p", { style: { color: "var(--text-dim)" } },
-    "Integration health checks. Pings run every 60s — or click Re-test now."));
+    "Integration health checks. Pings run every 60s - or click Re-test now."));
 
   containerRef.appendChild(spotifyStep(status.spotify));
   containerRef.appendChild(jellyfinStep(status.jellyfin));
@@ -172,7 +171,7 @@ async function refresh() {
     return;
   }
 
-  // Only rebuild the DOM if data actually changed — prevents flash every 60s
+  // Only rebuild the DOM if data actually changed - prevents flash every 60s
   const key = JSON.stringify(status);
   if (key === lastKey) return;
   lastKey = key;

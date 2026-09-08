@@ -173,6 +173,8 @@ def spotify_auth_status():
     status["bundled_client_id"] = (
         not get_setting("SPOTIFY_CLIENT_ID") and has_bundled_client_id()
     )
+    status["public_fallback_available"] = True
+    status["public_playlist_mode"] = "spotapi"
     return ok(data=status)
 
 

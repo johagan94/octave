@@ -12,11 +12,11 @@ const SECTIONS = [
   {
     title: "Spotify",
     statusId: "spotify-status",
-    description: "Click 'Connect Spotify' and log in — no developer account needed. Uses PKCE OAuth (no client secret).",
-    help: "Leave Client ID blank to use the bundled app. With your own Spotify app, add the redirect URI shown after Connect Spotify (the Octave external URL + /callback) in developer.spotify.com/dashboard. Client Secret is only for legacy (non-PKCE) flows.",
+    description: "Public playlist links use SpotAPI automatically without a login. Connect Spotify only for private playlists and account discovery.",
+    help: "OAuth uses PKCE and needs a Spotify app Client ID unless this build provides one. Add the configured Redirect URI to that app. SpotAPI does not receive your Spotify credentials.",
     fields: [
-      { key: "SPOTIFY_CLIENT_ID", label: "Client ID (optional)", type: "text", required: false },
-      { key: "SPOTIFY_REDIRECT_URI", label: "Redirect URI", type: "text", required: false, placeholder: "https://octave.yourdomain.com/callback" },
+      { key: "SPOTIFY_CLIENT_ID", label: "OAuth Client ID", type: "text", required: false },
+      { key: "SPOTIFY_REDIRECT_URI", label: "OAuth Redirect URI", type: "text", required: false, placeholder: "https://octave.yourdomain.com/callback" },
     ],
     actions: [
       { label: "Connect Spotify", action: "connectSpotify" },
@@ -82,7 +82,7 @@ const SECTIONS = [
   {
     title: "Runtime",
     description: "Server behavior and scheduling.",
-    help: "Sync All My Spotify Playlists: when on, syncs every playlist in your Spotify account (owned + followed) and ignores the manual Playlists list; Spotify-owned editorial playlists are skipped automatically. Changes to SYNC_SCHEDULE take effect immediately. Other changes may require a container restart.",
+    help: "Sync All My Spotify Playlists requires Spotify OAuth. Manual public playlist links work through SpotAPI without it. Changes to SYNC_SCHEDULE take effect immediately. Other changes may require a container restart.",
     fields: [
       { key: "SYNC_SCHEDULE", label: "Cron Schedule", type: "text", required: false, placeholder: "0 2 * * *" },
       { key: "SYNC_ALL_PLAYLISTS", label: "Sync All My Spotify Playlists", type: "checkbox", required: false },
@@ -206,11 +206,16 @@ async function refreshSpotifyStatus() {
     const res = await api.get("/api/spotify/auth-status");
     if (res.authenticated) {
       const exp = res.expires_at ? new Date(res.expires_at * 1000).toLocaleString() : "unknown";
-      setSpotifyStatusText("Status: Connected ✅  (token valid until " + exp + ")", "var(--ok)");
+      setSpotifyStatusText("Status: Spotify connected (token valid until " + exp + ")", "var(--ok)");
+    } else if (res.public_fallback_available) {
+      const oauth = res.client_id_available
+        ? " OAuth is available for private playlists and account discovery."
+        : " Add an OAuth Client ID to enable private playlists and account discovery.";
+      setSpotifyStatusText("Status: Public playlists ready via SpotAPI." + oauth, "var(--ok)");
     } else if (!res.client_id_available) {
       setSpotifyStatusText("Status: No Client ID available — set one below or ship a bundled default", "var(--error, #c00)");
     } else {
-      const note = res.bundled_client_id ? " (using bundled app — no dev account needed)" : "";
+      const note = res.bundled_client_id ? " (using bundled OAuth app)" : "";
       setSpotifyStatusText("Status: Not connected" + note + " — click 'Connect Spotify'", "var(--warn, #b80)");
     }
     return res.authenticated === true;
@@ -230,7 +235,7 @@ function startSpotifyPolling() {
     if (done || Date.now() > deadline) {
       clearInterval(_spotifyPollTimer);
       _spotifyPollTimer = null;
-      if (done) toast("Spotify connected ✅");
+      if (done) toast("Spotify connected");
     }
   }, 3000);
 }
@@ -418,7 +423,9 @@ async function handleAction(action) {
       const res = await api.get("/api/spotify/auth-status");
       if (res.authenticated) {
         const exp = res.expires_at ? new Date(res.expires_at * 1000).toLocaleString() : "unknown";
-        toast("Spotify: connected ✅ | expires " + exp + " | scopes: " + (res.scope || "?"));
+        toast("Spotify: connected | expires " + exp + " | scopes: " + (res.scope || "?"));
+      } else if (res.public_fallback_available) {
+        toast("Spotify: public playlists ready via SpotAPI; OAuth is not connected");
       } else {
         toast("Spotify: not connected — " + (res.reason || "unknown"), "error");
       }

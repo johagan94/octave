@@ -96,10 +96,10 @@ def _has_valid_token(cache_path: Path) -> bool:
 
 
 def check_spotify() -> IntegrationStatus:
-    """Spotify is 'reachable' if a valid (or refreshable) token exists.
+    """Report PKCE readiness or the public SpotAPI fallback.
 
-    Supports both PKCE (no client secret) and legacy Authorization Code flows.
-    We do NOT trigger an OAuth flow here -- that's a UI-driven action.
+    A user token is required only for private playlists and account discovery.
+    Public playlist links remain usable through SpotAPI without OAuth.
     """
     try:
         from ..spotify_auth import resolve_client_id
@@ -108,11 +108,6 @@ def check_spotify() -> IntegrationStatus:
         cid = _cred("SPOTIFY_CLIENT_ID")
     csec = _cred("SPOTIFY_CLIENT_SECRET")
 
-    if not cid:
-        return IntegrationStatus(configured=False, reachable=False,
-                                 error="SPOTIFY_CLIENT_ID not set "
-                                       "(and no bundled default)")
-
     data_dir = Path(os.environ.get("SYNC_DATA_DIR", "/app/data"))
     pkce_cache = data_dir / ".spotify_pkce_token"
     legacy_cache = Path(os.environ.get("SPOTIFY_TOKEN_CACHE", ".spotify_token_cache"))
@@ -120,25 +115,32 @@ def check_spotify() -> IntegrationStatus:
     if _has_valid_token(pkce_cache):
         return IntegrationStatus(
             configured=True, reachable=True,
-            detail={"mode": "pkce", "has_refresh_token": True},
+            detail={
+                "mode": "pkce",
+                "has_refresh_token": True,
+                "public_fallback": "spotapi",
+            },
         )
 
     if _has_valid_token(legacy_cache):
         return IntegrationStatus(
             configured=True, reachable=True,
-            detail={"mode": "user_token", "has_refresh_token": True},
-        )
-
-    if csec:
-        return IntegrationStatus(
-            configured=True, reachable=False,
-            error="No user token. Open Settings -> Connect Spotify to authorize.",
-            detail={"mode": "client_credentials", "note": "public playlists only"},
+            detail={
+                "mode": "user_token",
+                "has_refresh_token": True,
+                "public_fallback": "spotapi",
+            },
         )
 
     return IntegrationStatus(
-        configured=True, reachable=False,
-        error="No token found. Open Settings → Connect Spotify to authorize.",
+        configured=True,
+        reachable=True,
+        detail={
+            "mode": "spotapi",
+            "public_only": True,
+            "oauth_client_id_available": bool(cid),
+            "legacy_client_secret_set": bool(csec),
+        },
     )
 
 
