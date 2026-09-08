@@ -53,3 +53,30 @@ def test_find_album_by_mbid_exact():
     assert c.find_album_by_mbid("rg-2", albums)["id"] == 2
     assert c.find_album_by_mbid("rg-missing", albums) is None
     assert c.find_album_by_mbid("", albums) is None
+
+
+def test_get_uses_short_retry_policy():
+    c = _client()
+    response = type("Response", (), {
+        "raise_for_status": lambda self: None,
+        "json": lambda self: [],
+    })()
+
+    with patch("octave.lidarr_client.http_get_with_retry", return_value=response) as request:
+        c._get("/album")
+
+    assert request.call_args.kwargs["max_attempts"] == 2
+    assert request.call_args.kwargs["backoff_base"] == 1.0
+
+
+def test_album_catalogue_failure_is_cached_for_the_run():
+    c = _client()
+    with patch.object(c, "_get", side_effect=RuntimeError("HTTP 500")) as request:
+        for _ in range(2):
+            try:
+                c.get_albums()
+            except RuntimeError:
+                pass
+
+    assert request.call_count == 1
+    assert c.album_catalog_unavailable is True

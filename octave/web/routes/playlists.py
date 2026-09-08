@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -257,12 +258,12 @@ def delete_playlist(spotify_id: str):
 
 # ── Export / Import ───────────────────────────────────────────────────────────
 
-def _jf_client():
+def _jf_client(track_cache=None):
     """Instantiate the sync JellyfinClient from the merged config."""
     from ...config import load_config
     from ...jellyfin_client import JellyfinClient
     try:
-        return JellyfinClient(load_config())
+        return JellyfinClient(load_config(), track_cache=track_cache)
     except Exception as exc:
         raise HTTPException(503, f"Jellyfin not configured: {exc}")
 
@@ -327,6 +328,7 @@ def import_playlist(body: dict = Body(...)):
     dir and registered in config so future sync runs can use JSON sources
     without calling Spotify.
     """
+    started_at = time.perf_counter()
     try:
         from ...playlist_json import save_imported_playlists
 
@@ -334,17 +336,29 @@ def import_playlist(body: dict = Body(...)):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    jf = _jf_client()
+    from ...track_cache import TrackCache
+
+    track_cache = TrackCache()
+    track_cache.load()
+    canonicalized_at = time.perf_counter()
+    jf = _jf_client(track_cache=track_cache)
     jf._build_index()
+    indexed_at = time.perf_counter()
 
     cfg = _read_config()
     playlists = cfg.setdefault("playlists", [])
+    playlist_indexes = {
+        entry.get("spotify_playlist_id"): index
+        for index, entry in enumerate(playlists)
+        if entry.get("spotify_playlist_id")
+    }
     imported_rows: list[dict] = []
     total_matched = 0
     total_skipped = 0
     total_tracks = 0
 
     for source_path, canonical in imported:
+        playlist_started_at = time.perf_counter()
         pl_data = canonical["playlist"]
         name = (pl_data.get("name") or "").strip()
         tracks = pl_data.get("tracks") or []
@@ -358,20 +372,17 @@ def import_playlist(body: dict = Body(...)):
             found = False
 
             if jf_id:
-                try:
-                    item = jf._get(f"/Users/{jf.user_id}/Items/{jf_id}", Fields="Name")
-                    if item.get("Name"):
-                        matched_ids.append(jf_id)
-                        found = True
-                except Exception:
-                    pass
+                item = jf.get_library_item(jf_id)
+                if item:
+                    matched_ids.append(jf_id)
+                    found = True
 
             if not found:
                 title = track.get("title") or track.get("name", "")
                 artists = track.get("artists") or []
                 artist = track.get("artist") or (artists[0].get("name") if artists else "")
                 if title and artist:
-                    result = jf.find_track(title, artist)
+                    result = jf.find_track(title, artist, track.get("id"))
                     if result:
                         matched_ids.append(result["Id"])
                         found = True
@@ -380,8 +391,17 @@ def import_playlist(body: dict = Body(...)):
                 skipped += 1
 
         pl_id = jf.get_or_create_playlist(name)
+        added_ids: list[str] = []
         if matched_ids:
-            jf.add_to_playlist(pl_id, matched_ids)
+            matched_ids = list(dict.fromkeys(matched_ids))
+            existing_ids = {
+                item.get("Id")
+                for item in jf.get_playlist_items(pl_id)
+                if item.get("Id")
+            }
+            added_ids = [item_id for item_id in matched_ids if item_id not in existing_ids]
+            for start in range(0, len(added_ids), 100):
+                jf.add_to_playlist(pl_id, added_ids[start:start + 100])
 
         spotify_id = pl_data["spotify_id"]
         entry = {
@@ -391,11 +411,11 @@ def import_playlist(body: dict = Body(...)):
             "source": "local_json",
             "source_path": str(source_path),
         }
-        for idx, existing in enumerate(playlists):
-            if existing.get("spotify_playlist_id") == spotify_id:
-                playlists[idx] = {**existing, **entry}
-                break
+        existing_index = playlist_indexes.get(spotify_id)
+        if existing_index is not None:
+            playlists[existing_index] = {**playlists[existing_index], **entry}
         else:
+            playlist_indexes[spotify_id] = len(playlists)
             playlists.append(entry)
 
         row = {
@@ -403,6 +423,7 @@ def import_playlist(body: dict = Body(...)):
             "name": name,
             "spotify_id": spotify_id,
             "matched": len(matched_ids),
+            "added": len(added_ids),
             "skipped": skipped,
             "total": len(tracks),
         }
@@ -410,8 +431,15 @@ def import_playlist(body: dict = Body(...)):
         total_matched += row["matched"]
         total_skipped += row["skipped"]
         total_tracks += row["total"]
+        log.info(
+            "Imported playlist %r: matched=%d skipped=%d total=%d in %.2fs",
+            name, row["matched"], row["skipped"], row["total"],
+            time.perf_counter() - playlist_started_at,
+        )
 
+    track_cache.save()
     _write_config(cfg)
+    finished_at = time.perf_counter()
     first = imported_rows[0]
     return ok({
         "playlist_id": first["playlist_id"],
@@ -422,6 +450,11 @@ def import_playlist(body: dict = Body(...)):
         "skipped": total_skipped,
         "total": total_tracks,
         "imported": imported_rows,
+        "timing": {
+            "canonicalize_seconds": round(canonicalized_at - started_at, 3),
+            "index_seconds": round(indexed_at - canonicalized_at, 3),
+            "total_seconds": round(finished_at - started_at, 3),
+        },
     })
 
 # ── Smart playlist generator ──────────────────────────────────────────────────

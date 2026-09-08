@@ -29,10 +29,10 @@ def test_auth_manager_reflects_refreshed_token():
         assert mgr.get_access_token() == "second"
 
 
-def test_make_client_raises_when_not_authorized():
+def test_make_client_uses_public_fallback_when_not_authorized():
     with patch.object(spotify_auth, "get_valid_access_token", return_value=None):
-        with pytest.raises(RuntimeError, match="not authorized"):
-            spotify_client.make_spotify_client({})
+        client = spotify_client.make_spotify_client({})
+    assert isinstance(client, spotify_client._SpotAPIPublicOnlyClient)
 
 
 def test_auth_manager_raises_401_when_token_unavailable():

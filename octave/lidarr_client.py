@@ -23,6 +23,7 @@ class LidarrClient:
         self._root_folder_cache: Optional[str] = None
         self._artist_cache: Optional[list[dict]] = None
         self._album_cache: Optional[list[dict]] = None
+        self._album_cache_error: Optional[Exception] = None
         self._album_exact_index: dict[str, dict] = {}
         # Per-run cache: lowercase artist name → resolved Lidarr artist or None.
         # Sentinel ``...`` distinguishes "not yet looked up" from "looked up, no match".
@@ -46,7 +47,12 @@ class LidarrClient:
 
     def _get(self, path: str, **params) -> list | dict:
         r = http_get_with_retry(
-            f"{self.base}/api/v1{path}", self.headers, params, timeout=30
+            f"{self.base}/api/v1{path}",
+            self.headers,
+            params,
+            timeout=30,
+            max_attempts=2,
+            backoff_base=1.0,
         )
         r.raise_for_status()
         return r.json()
@@ -197,9 +203,19 @@ class LidarrClient:
     # ── Album management ──────────────────────────────────────────────────
 
     def get_albums(self) -> list[dict]:
+        if self._album_cache_error is not None:
+            raise RuntimeError("Lidarr album catalogue is unavailable this run") from self._album_cache_error
         if self._album_cache is None:
-            self._album_cache = self._get("/album")
+            try:
+                self._album_cache = self._get("/album")
+            except Exception as exc:
+                self._album_cache_error = exc
+                raise
         return self._album_cache
+
+    @property
+    def album_catalog_unavailable(self) -> bool:
+        return self._album_cache_error is not None
 
     def get_artist_albums(self, artist_id: int) -> list[dict]:
         cached = self._run_artist_albums_cache.get(artist_id)

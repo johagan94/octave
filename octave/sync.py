@@ -323,6 +323,7 @@ def sync_playlist(
     playlist_total: int,
     listenbrainz=None,
     lastfm=None,
+    missing_tracks_store: Optional[dict] = None,
 ) -> dict:
     """Sync one playlist; returns ``{matched, missing, albums_requested, waiting_lidarr}``."""
     spotify_id = playlist_cfg["spotify_playlist_id"]
@@ -513,7 +514,12 @@ def sync_playlist(
     # Persist missing tracks for UI download
     if missing:
         try:
-            write_missing_tracks(jf_name, spotify_id, missing)
+            write_missing_tracks(
+                jf_name,
+                spotify_id,
+                missing,
+                store=missing_tracks_store,
+            )
         except Exception as exc:
             log.debug("Failed to write missing tracks: %s", exc)
 
@@ -525,6 +531,14 @@ def sync_playlist(
 
     if lidarr is None or mb is None:
         log.info("  Lidarr not configured; missing albums were recorded but not requested")
+        return {
+            "matched": matched_count,
+            "missing": missing_count,
+            "albums_requested": 0,
+            "waiting_lidarr": len(waiting_lidarr),
+        }
+    if getattr(lidarr, "album_catalog_unavailable", False):
+        log.debug("  Lidarr album catalogue remains unavailable; skipping requests")
         return {
             "matched": matched_count,
             "missing": missing_count,
@@ -583,6 +597,24 @@ def sync_playlist(
 
     # Parallel Lidarr album requests
     if album_requests:
+        try:
+            # Every request begins with the global album catalogue. Probe it
+            # once so a broken Lidarr endpoint cannot multiply retries across
+            # thousands of queued albums.
+            lidarr.get_albums()
+        except Exception as exc:
+            log.error(
+                "  Lidarr album catalogue unavailable; skipping %d album "
+                "request(s) this run: %s",
+                len(album_requests), exc,
+            )
+            save_state(state)
+            return {
+                "matched": matched_count,
+                "missing": missing_count,
+                "albums_requested": 0,
+                "waiting_lidarr": len(waiting_lidarr),
+            }
         with concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_LIDARR_WORKERS) as pool:
             futures = [
                 pool.submit(
@@ -636,20 +668,10 @@ def write_missing_tracks(
     spotify_id: str,
     missing: list[dict],
     output_dir: Optional[str] = None,
+    store: Optional[dict] = None,
 ) -> None:
     """Persist missing tracks to JSON for UI download."""
-    import json
-    from pathlib import Path
-    if output_dir is None:
-        output_dir = os.environ.get("SYNC_DATA_DIR", "data")
-    out = Path(output_dir) / "missing_tracks.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    existing: dict = {}
-    if out.exists():
-        try:
-            existing = json.loads(out.read_text())
-        except json.JSONDecodeError:
-            pass
+    existing = store if store is not None else load_missing_tracks(output_dir)
     existing[spotify_id] = {
         "playlist_name": playlist_name,
         "tracks": [
@@ -664,4 +686,35 @@ def write_missing_tracks(
             for t in missing
         ],
     }
-    out.write_text(json.dumps(existing, indent=2))
+    if store is None:
+        save_missing_tracks(existing, output_dir)
+
+
+def _missing_tracks_path(output_dir: Optional[str] = None):
+    from pathlib import Path
+
+    directory = output_dir or os.environ.get("SYNC_DATA_DIR", "data")
+    return Path(directory) / "missing_tracks.json"
+
+
+def load_missing_tracks(output_dir: Optional[str] = None) -> dict:
+    import json
+
+    out = _missing_tracks_path(output_dir)
+    if not out.exists():
+        return {}
+    try:
+        data = json.loads(out.read_text())
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_missing_tracks(store: dict, output_dir: Optional[str] = None) -> None:
+    import json
+
+    out = _missing_tracks_path(output_dir)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    tmp.write_text(json.dumps(store, indent=2))
+    tmp.replace(out)

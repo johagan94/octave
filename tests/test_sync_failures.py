@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from octave import sync as sync_mod
-from octave.sync import sync_playlist
+from octave.sync import save_missing_tracks, sync_playlist, write_missing_tracks
 
 
 def _track(track_id="spotify-track", name="Song", artist="Artist", album_id="album-id"):
@@ -115,6 +115,41 @@ def test_sync_playlist_records_missing_without_lidarr(tmp_path):
         "waiting_lidarr": 0,
     }
     assert (tmp_path / "missing_tracks.json").exists()
+
+
+def test_sync_playlist_skips_lidarr_batch_when_album_catalogue_fails(tmp_path):
+    class FailingLidarr:
+        def get_albums(self):
+            raise RuntimeError("catalogue HTTP 500")
+
+    with patch.dict(os.environ, {"SYNC_DATA_DIR": str(tmp_path)}, clear=False), \
+            patch.object(sync_mod, "get_playlist_tracks", return_value=[_track()]), \
+            patch.object(sync_mod, "get_playlist_cover", return_value=None):
+        stats = sync_playlist(
+            {"spotify_playlist_id": "playlist-id", "jellyfin_playlist_name": "Target"},
+            sp=object(),
+            jf=FakeJellyfin(found=None),
+            lidarr=FailingLidarr(),
+            mb=object(),
+            state={"lidarr_requested_albums": {}, "current_run": "run"},
+            playlist_num=1,
+            playlist_total=1,
+        )
+
+    assert stats["albums_requested"] == 0
+    assert stats["missing"] == 1
+
+
+def test_missing_tracks_store_is_written_once_at_end(tmp_path):
+    store = {}
+    write_missing_tracks("One", "one", [_track()], str(tmp_path), store=store)
+    write_missing_tracks("Two", "two", [_track(track_id="two")], str(tmp_path), store=store)
+
+    assert not (tmp_path / "missing_tracks.json").exists()
+    save_missing_tracks(store, str(tmp_path))
+
+    payload = __import__("json").loads((tmp_path / "missing_tracks.json").read_text())
+    assert set(payload) == {"one", "two"}
 
 
 def test_sync_playlist_reuses_state_playlist_mapping():

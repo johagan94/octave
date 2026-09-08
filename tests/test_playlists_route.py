@@ -79,14 +79,17 @@ def test_import_playlist_registers_local_json_source(tmp_path):
         def _build_index(self):
             pass
 
-        def _get(self, *args, **kwargs):
-            raise RuntimeError("missing direct id")
+        def get_library_item(self, item_id):
+            return None
 
-        def find_track(self, title, artist):
+        def find_track(self, title, artist, spotify_id=None):
             return {"Id": f"jf-{title}-{artist}"}
 
         def get_or_create_playlist(self, name):
             return "playlist-jf-id"
+
+        def get_playlist_items(self, playlist_id):
+            return []
 
         def add_to_playlist(self, playlist_id, item_ids):
             self.added = item_ids

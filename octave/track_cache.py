@@ -24,6 +24,8 @@ class TrackCache:
         self._path = path or DEFAULT_CACHE_PATH
         self._forward: dict[str, str] = {}   # spotify_id → jellyfin_id
         self._reverse: dict[str, str] = {}   # jellyfin_id → spotify_id
+        self._not_found: set[str] = set()
+        self._library_scope: Optional[str] = None
         self._dirty = False
 
     def load(self) -> None:
@@ -38,8 +40,13 @@ class TrackCache:
         forward = data.get("forward", {})
         self._forward = forward
         self._reverse = {v: k for k, v in forward.items()}
+        self._not_found = set(data.get("not_found", []))
+        self._library_scope = data.get("library_scope")
         self._dirty = False
-        log.info("Track cache loaded: %d entries", len(self._forward))
+        log.info(
+            "Track cache loaded: %d matches, %d misses",
+            len(self._forward), len(self._not_found),
+        )
 
     def save(self) -> None:
         if not self._dirty:
@@ -47,7 +54,11 @@ class TrackCache:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
         with tmp.open("w") as fh:
-            json.dump({"forward": self._forward}, fh)
+            json.dump({
+                "forward": self._forward,
+                "not_found": sorted(self._not_found),
+                "library_scope": self._library_scope,
+            }, fh)
         tmp.replace(self._path)
         self._dirty = False
         log.debug("Track cache saved: %d entries", len(self._forward))
@@ -58,6 +69,22 @@ class TrackCache:
     def get_reverse(self, jellyfin_id: str) -> Optional[str]:
         return self._reverse.get(jellyfin_id)
 
+    def is_not_found(self, spotify_id: str) -> bool:
+        return spotify_id in self._not_found
+
+    def set_not_found(self, spotify_id: str) -> None:
+        if spotify_id and spotify_id not in self._not_found:
+            self._not_found.add(spotify_id)
+            self._dirty = True
+
+    def set_library_scope(self, scope: str) -> None:
+        """Invalidate negative matches whenever Jellyfin library content changes."""
+        if scope == self._library_scope:
+            return
+        self._library_scope = scope
+        self._not_found.clear()
+        self._dirty = True
+
     def set(self, spotify_id: str, jellyfin_id: str) -> None:
         old_jf = self._forward.get(spotify_id)
         if old_jf == jellyfin_id:
@@ -66,12 +93,16 @@ class TrackCache:
             self._reverse.pop(old_jf, None)
         self._forward[spotify_id] = jellyfin_id
         self._reverse[jellyfin_id] = spotify_id
+        self._not_found.discard(spotify_id)
         self._dirty = True
 
     def remove(self, spotify_id: str) -> None:
         jf_id = self._forward.pop(spotify_id, None)
+        missing = spotify_id in self._not_found
+        self._not_found.discard(spotify_id)
         if jf_id:
             self._reverse.pop(jf_id, None)
+        if jf_id or missing:
             self._dirty = True
 
     def validate(self, valid_jellyfin_ids: set[str]) -> None:

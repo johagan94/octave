@@ -20,7 +20,7 @@ from .logging_setup import configure_logging
 from .musicbrainz import MusicBrainzResolver
 from .spotify_client import get_user_playlists, make_spotify_client
 from .state import load_state, save_state
-from .sync import sync_playlist
+from .sync import load_missing_tracks, save_missing_tracks, sync_playlist
 from .track_cache import TrackCache
 
 log = logging.getLogger(__name__)
@@ -160,11 +160,15 @@ def run_sync(
     }
     total = len(playlists)
     errors: list[str] = []
+    missing_tracks_store = load_missing_tracks()
     for n, pl_cfg in enumerate(playlists, 1):
         playlist_id = pl_cfg.get("spotify_playlist_id", f"playlist-{n}")
         try:
             try:
-                stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm)
+                stats = sync_playlist(
+                    pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm,
+                    missing_tracks_store=missing_tracks_store,
+                )
             except Exception as _exc:
                 # Retry once on Spotify token expiry. sync_playlist re-wraps the
                 # SpotifyException as a RuntimeError, so check the cause chain too
@@ -178,7 +182,10 @@ def run_sync(
                     from .spotify_auth import refresh_access_token
                     if refresh_access_token():
                         sp = make_spotify_client(cfg)
-                        stats = sync_playlist(pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm)
+                        stats = sync_playlist(
+                            pl_cfg, sp, jf, lidarr, mb, state, n, total, lb, lfm,
+                            missing_tracks_store=missing_tracks_store,
+                        )
                     else:
                         raise RuntimeError("Spotify token refresh failed; re-connect in Settings") from _exc
                 else:
@@ -200,6 +207,9 @@ def run_sync(
                     progress_cb(n, total)
                 except Exception:
                     log.exception("progress_cb raised; ignoring")
+
+    # Persist run-level files once after all playlists.
+    save_missing_tracks(missing_tracks_store)
 
     # Save track cache for next run
     cache_stats = jf.get_cache_stats()

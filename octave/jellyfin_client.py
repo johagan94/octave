@@ -1,6 +1,7 @@
 """Jellyfin client: library indexing, fuzzy track lookup, playlist CRUD,
 cover art upload, persistent library index, and track-link cache integration."""
 
+import hashlib
 import json
 import logging
 import os
@@ -9,9 +10,10 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+from rapidfuzz import fuzz, process
 
 from .http_utils import http_get_with_retry
-from .matcher import normalise, track_score
+from .matcher import normalise
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +41,11 @@ class JellyfinClient:
         self.match_threshold: int = cfg.get("match_threshold", 80)
         self._library_cache: Optional[list[dict]] = None
         self._exact_index: dict[str, dict] = {}
+        self._items_by_id: dict[str, dict] = {}
+        self._normalised_titles: list[str] = []
+        self._normalised_artists: list[str] = []
+        self._not_found_track_ids: set[str] = set()
+        self._playlists_cache: Optional[list[dict]] = None
         self._track_cache = track_cache  # TrackCache instance or None
         self._cache_hits = 0
         self._cache_misses = 0
@@ -106,21 +113,46 @@ class JellyfinClient:
                 return
             raise
 
-        self._library_cache = items
-        self._exact_index = {}
-        for item in items:
-            title = normalise(item.get("Name", ""))
-            for artist in item.get("Artists", []):
-                self._exact_index.setdefault(f"{normalise(artist)}|{title}", item)
-            aa = item.get("AlbumArtist", "")
-            if aa:
-                self._exact_index.setdefault(f"{normalise(aa)}|{title}", item)
+        self._set_library_items(items)
 
         log.info(
             "  Library ready: %d tracks, %d index keys",
             len(items), len(self._exact_index),
         )
         self._save_persistent_index()
+
+    def _set_library_items(self, items: list[dict]) -> None:
+        """Build every lookup structure in one pass over the library."""
+        self._library_cache = items
+        self._exact_index = {}
+        self._items_by_id = {}
+        self._normalised_titles = []
+        self._normalised_artists = []
+        self._not_found_track_ids.clear()
+        for item in items:
+            item_id = item.get("Id")
+            if item_id:
+                self._items_by_id[item_id] = item
+            title = normalise(item.get("Name", ""))
+            artists = [a for a in (item.get("Artists") or []) if a]
+            artist_text = " ".join(artists) or item.get("AlbumArtist", "")
+            self._normalised_titles.append(title)
+            self._normalised_artists.append(normalise(artist_text))
+            for artist in artists:
+                self._exact_index.setdefault(f"{normalise(artist)}|{title}", item)
+            aa = item.get("AlbumArtist", "")
+            if aa:
+                self._exact_index.setdefault(f"{normalise(aa)}|{title}", item)
+        if self._track_cache is not None:
+            signature_rows = (
+                f"{item.get('Id', '')}|{item.get('Name', '')}|"
+                f"{','.join(item.get('Artists') or [])}|{item.get('AlbumArtist', '')}"
+                for item in items
+            )
+            signature = hashlib.sha1(
+                "\0".join(sorted(signature_rows)).encode("utf-8", errors="ignore")
+            ).hexdigest()
+            self._track_cache.set_library_scope(signature)
 
     def _fetch_library_items(self, params: dict) -> list[dict]:
         """Page through the Jellyfin music library and return all audio items."""
@@ -185,15 +217,7 @@ class JellyfinClient:
                     age, _LIBRARY_CACHE_TTL_SECONDS,
                 )
                 return False
-            self._library_cache = items
-            self._exact_index = {}
-            for item in items:
-                title = normalise(item.get("Name", ""))
-                for artist in item.get("Artists", []):
-                    self._exact_index.setdefault(f"{normalise(artist)}|{title}", item)
-                aa = item.get("AlbumArtist", "")
-                if aa:
-                    self._exact_index.setdefault(f"{normalise(aa)}|{title}", item)
+            self._set_library_items(items)
             log.info(
                 "  Library loaded from disk: %d tracks, %d index keys (age=%.0fs)",
                 len(items), len(self._exact_index), age,
@@ -216,46 +240,62 @@ class JellyfinClient:
         self._build_index()
 
         # Phase 0: track-link cache
-        if spotify_id and self._track_cache:
+        if spotify_id and self._track_cache is not None:
             cached_jf_id = self._track_cache.get(spotify_id)
             if cached_jf_id:
-                for item in self._library_cache:  # type: ignore[union-attr]
-                    if item.get("Id") == cached_jf_id:
-                        self._cache_hits += 1
-                        return item
+                item = self._items_by_id.get(cached_jf_id)
+                if item:
+                    self._cache_hits += 1
+                    return item
                 self._track_cache.remove(spotify_id)
+        if spotify_id and spotify_id in self._not_found_track_ids:
+            return None
+        if (
+            spotify_id
+            and self._track_cache is not None
+            and self._track_cache.is_not_found(spotify_id)
+        ):
+            return None
 
         key = f"{normalise(artist)}|{normalise(title)}"
         if key in self._exact_index:
             item = self._exact_index[key]
-            if spotify_id and self._track_cache:
+            if spotify_id and self._track_cache is not None:
                 self._track_cache.set(spotify_id, item["Id"])
             return item
 
         self._cache_misses += 1
+        title_n = normalise(title)
+        artist_n = normalise(artist)
+        title_scores: dict[int, float] = {}
+        for scorer in (fuzz.ratio, fuzz.token_sort_ratio):
+            for _choice, score, index in process.extract(
+                title_n,
+                self._normalised_titles,
+                scorer=scorer,
+                score_cutoff=75,
+                limit=None,
+            ):
+                title_scores[index] = max(score, title_scores.get(index, 0.0))
+
         best_score = 0.0
         best_item: Optional[dict] = None
 
-        for item in self._library_cache:  # type: ignore[union-attr]
-            t_score = track_score(title, item.get("Name", ""))
-            if t_score < 75:
-                continue
-            # Use Artists list; fall back to AlbumArtist if list is empty
-            # (Jellyfin sometimes populates only AlbumArtist, not Artists)
-            item_artists = item.get("Artists") or []
-            artist_str = " ".join(a for a in item_artists if a) or item.get("AlbumArtist", "")
-            a_score = track_score(artist, artist_str)
+        for index, t_score in title_scores.items():
+            candidate_artist = self._normalised_artists[index]
+            a_score = max(
+                fuzz.ratio(artist_n, candidate_artist),
+                fuzz.token_sort_ratio(artist_n, candidate_artist),
+            )
             if a_score < 65:
                 continue
             combined = t_score * 0.65 + a_score * 0.35
             if combined > best_score:
                 best_score = combined
-                best_item = item
-                if best_score >= 95:
-                    break
+                best_item = self._library_cache[index]  # type: ignore[index]
 
         if best_score >= self.match_threshold:
-            if spotify_id and self._track_cache and best_item:
+            if spotify_id and self._track_cache is not None and best_item:
                 self._track_cache.set(spotify_id, best_item["Id"])
             return best_item
         if best_score > 0:
@@ -263,20 +303,32 @@ class JellyfinClient:
                 "  No fuzzy match for %r / %r (best %.1f < threshold %d)",
                 title, artist, best_score, self.match_threshold,
             )
+        if spotify_id:
+            self._not_found_track_ids.add(spotify_id)
+            if self._track_cache is not None:
+                self._track_cache.set_not_found(spotify_id)
         return None
 
     def get_cache_stats(self) -> dict:
         return {"hits": self._cache_hits, "misses": self._cache_misses}
 
+    def get_library_item(self, item_id: str) -> Optional[dict]:
+        """Return a library item by ID without another Jellyfin request."""
+        self._build_index()
+        return self._items_by_id.get(item_id)
+
     # ── Playlists ─────────────────────────────────────────────────────────
 
-    def get_playlists(self) -> list[dict]:
+    def get_playlists(self, force_reload: bool = False) -> list[dict]:
+        if self._playlists_cache is not None and not force_reload:
+            return self._playlists_cache
         data = self._get(
             f"/Users/{self.user_id}/Items",
             IncludeItemTypes="Playlist",
             Recursive=True,
         )
-        return data.get("Items", [])
+        self._playlists_cache = data.get("Items", [])
+        return self._playlists_cache
 
     @staticmethod
     def _norm_name(name: str) -> str:
@@ -295,7 +347,10 @@ class JellyfinClient:
             "/Playlists",
             payload={"Name": name, "UserId": self.user_id, "MediaType": "Audio"},
         )
-        return r.json()["Id"]
+        playlist_id = r.json()["Id"]
+        if self._playlists_cache is not None:
+            self._playlists_cache.append({"Id": playlist_id, "Name": name})
+        return playlist_id
 
     def get_or_create_playlist(self, name: str) -> str:
         target = self._norm_name(name)
@@ -332,6 +387,11 @@ class JellyfinClient:
         and any drift (manual edits, stale items) is reset on every run.
         """
         self._delete(f"/Items/{playlist_id}")
+        if self._playlists_cache is not None:
+            self._playlists_cache = [
+                playlist for playlist in self._playlists_cache
+                if playlist.get("Id") != playlist_id
+            ]
         log.info("  Deleted Jellyfin playlist id=%s", playlist_id)
 
     def set_playlist_image(

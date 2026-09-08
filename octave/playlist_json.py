@@ -229,5 +229,13 @@ def save_imported_playlist(data: dict) -> tuple[Path, dict]:
 
 def load_imported_playlist_tracks(path: str | Path) -> list[dict]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
+    playlist = data.get("playlist") if isinstance(data, dict) else None
+    if (
+        isinstance(data, dict)
+        and data.get("version") == 1
+        and data.get("source") == "local_json"
+        and isinstance(playlist, dict)
+        and isinstance(playlist.get("tracks"), list)
+    ):
+        return playlist["tracks"]
     return normalize_playlist_json(data)["playlist"]["tracks"]
-
