@@ -39,6 +39,8 @@ class LidarrClient:
         # every missing album by an artist queued its own refresh — hundreds per
         # run. Dedupe to at most one refresh per artist per run.
         self._refreshed_artist_ids: set[int] = set()
+        self._searched_album_ids: set[int] = set()
+        self._searched_album_ids_lock = threading.Lock()
         # Per-artist locks: prevents parallel threads from double-adding the same artist
         # when multiple missing albums from the same artist are processed concurrently.
         self._run_artist_lock_guard: threading.Lock = threading.Lock()
@@ -269,6 +271,23 @@ class LidarrClient:
                 return a
         return None
 
+    @staticmethod
+    def album_needs_search(album: dict) -> bool:
+        """Return True when Lidarr explicitly reports missing track files."""
+        stats = album.get("statistics") or {}
+        try:
+            track_count = int(stats.get("trackCount") or 0)
+            file_count = int(stats.get("trackFileCount") or 0)
+        except (TypeError, ValueError):
+            return False
+        if track_count > 0:
+            return file_count < track_count
+        try:
+            percent = float(stats.get("percentOfTracks"))
+        except (TypeError, ValueError):
+            return False
+        return percent < 100
+
     def _build_album_index(self) -> None:
         """Build O(1) lookup index for all albums. First checks exact, then score."""
         if self._album_exact_index:
@@ -360,9 +379,24 @@ class LidarrClient:
             return None
         return results[0] if results else None
 
-    def monitor_and_search_album(self, lidarr_album_id: int) -> None:
-        album = self._get(f"/album/{lidarr_album_id}")
-        album["monitored"] = True
-        self._put(f"/album/{lidarr_album_id}", album)
-        self._post("/command", {"name": "AlbumSearch", "albumIds": [lidarr_album_id]})
-        log.info("    ↳ Lidarr: monitoring + search triggered (album id=%d)", lidarr_album_id)
+    def monitor_and_search_album(self, lidarr_album_id: int) -> bool:
+        with self._searched_album_ids_lock:
+            if lidarr_album_id in self._searched_album_ids:
+                log.debug(
+                    "    Lidarr: search already queued for album id=%d this run",
+                    lidarr_album_id,
+                )
+                return False
+            self._searched_album_ids.add(lidarr_album_id)
+
+        try:
+            album = self._get(f"/album/{lidarr_album_id}")
+            album["monitored"] = True
+            self._put(f"/album/{lidarr_album_id}", album)
+            self._post("/command", {"name": "AlbumSearch", "albumIds": [lidarr_album_id]})
+        except Exception:
+            with self._searched_album_ids_lock:
+                self._searched_album_ids.discard(lidarr_album_id)
+            raise
+        log.info("    Lidarr: monitoring + search triggered (album id=%d)", lidarr_album_id)
+        return True

@@ -171,13 +171,13 @@ def request_album_in_lidarr(
             # endpoint, which isolates that failure and remains idempotent.
             log.debug("  Global Lidarr album lookup unavailable: %s", exc)
     if existing:
-        if not existing.get("monitored"):
+        if not existing.get("monitored") or lidarr.album_needs_search(existing):
             lidarr.monitor_and_search_album(existing["id"])
             with _state_lock:
                 requested[spotify_album_id] = {
                     "status": "requested", "lidarr_id": existing["id"],
                 }
-            log.info("    ✓ Found in library, now monitored (id=%d)", existing["id"])
+            log.info("    Found in library, search queued (id=%d)", existing["id"])
         else:
             log.info("    Already monitored (id=%d)", existing["id"])
             with _state_lock:
@@ -333,6 +333,15 @@ def request_album_in_lidarr(
         return
 
     if album.get("monitored"):
+        if lidarr.album_needs_search(album):
+            lidarr.monitor_and_search_album(album["id"])
+            with _state_lock:
+                requested[spotify_album_id] = {
+                    "status": "requested", "lidarr_id": album["id"],
+                }
+            log.info("    Missing files, search queued (id=%d)", album["id"])
+            save_state(state)
+            return
         with _state_lock:
             requested[spotify_album_id] = {
                 "status": "already_monitored", "lidarr_id": album["id"],

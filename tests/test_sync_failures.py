@@ -169,6 +169,9 @@ def test_scoped_lidarr_fallback_does_not_search_monitored_album():
         def find_album_in_artist(self, artist_id, album_name, albums):
             return albums[0]
 
+        def album_needs_search(self, album):
+            return False
+
         def monitor_and_search_album(self, album_id):
             raise AssertionError("monitored album should not be searched again")
 
@@ -186,6 +189,56 @@ def test_scoped_lidarr_fallback_does_not_search_monitored_album():
 
     assert state["lidarr_requested_albums"]["album-id"] == {
         "status": "already_monitored",
+        "lidarr_id": 99,
+    }
+
+
+def test_scoped_lidarr_fallback_searches_incomplete_monitored_album():
+    class ScopedLidarr:
+        album_catalog_unavailable = True
+        _run_artist_lock_guard = threading.Lock()
+        _run_artist_locks = {}
+        _run_artist_cache = {}
+
+        def __init__(self):
+            self.searched = []
+
+        def find_artist_in_library(self, name):
+            return {"id": 42, "artistName": name}
+
+        def get_artist_albums(self, artist_id):
+            return [{
+                "id": 99,
+                "title": "Album",
+                "monitored": True,
+                "statistics": {"trackCount": 8, "trackFileCount": 0},
+            }]
+
+        def find_album_in_artist(self, artist_id, album_name, albums):
+            return albums[0]
+
+        def album_needs_search(self, album):
+            return True
+
+        def monitor_and_search_album(self, album_id):
+            self.searched.append(album_id)
+
+    lidarr = ScopedLidarr()
+    state = {"lidarr_requested_albums": {}, "current_run": "run"}
+    with patch.object(sync_mod, "save_state"):
+        sync_mod.request_album_in_lidarr(
+            lidarr=lidarr,
+            mb=None,
+            spotify_album_id="album-id",
+            spotify_album_name="Album",
+            spotify_artist_id="artist-id",
+            spotify_artist_name="Artist",
+            state=state,
+        )
+
+    assert lidarr.searched == [99]
+    assert state["lidarr_requested_albums"]["album-id"] == {
+        "status": "requested",
         "lidarr_id": 99,
     }
 

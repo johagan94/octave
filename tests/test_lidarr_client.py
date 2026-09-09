@@ -92,3 +92,29 @@ def test_artist_album_failure_is_cached_for_the_run():
                 pass
 
     assert request.call_count == 1
+
+
+def test_album_needs_search_uses_lidarr_file_statistics():
+    c = _client()
+
+    assert c.album_needs_search({
+        "statistics": {"trackCount": 10, "trackFileCount": 0},
+    }) is True
+    assert c.album_needs_search({
+        "statistics": {"trackCount": 10, "trackFileCount": 10},
+    }) is False
+    assert c.album_needs_search({}) is False
+
+
+def test_album_search_is_deduped_per_run():
+    c = _client()
+    album = {"id": 99, "monitored": True}
+
+    with patch.object(c, "_get", return_value=album), \
+            patch.object(c, "_put") as put, \
+            patch.object(c, "_post", return_value={}) as post:
+        assert c.monitor_and_search_album(99) is True
+        assert c.monitor_and_search_album(99) is False
+
+    assert put.call_count == 1
+    assert post.call_count == 1
